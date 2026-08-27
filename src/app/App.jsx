@@ -21,6 +21,7 @@ import DiseaseTrendsClusters from '../components/dashboard/DiseaseTrendsClusters
 import ReportsAlerts from '../components/dashboard/ReportsAlerts';
 import SyncCenter from '../components/offline/SyncCenter';
 import Settings from '../components/dashboard/Settings';
+import FarmsList from '../components/dashboard/FarmsList';
 import { useSimulation } from '../hooks/useSimulation';
 
 const NAV = {
@@ -92,7 +93,7 @@ export default function App() {
           
           {page === "gis" && <GISDashboard liveData={liveData} isRunning={isRunning} toggleSimulation={toggleSimulation} demoStep={demoStep} actions={actions} />}
           {page === "sync" && <SyncCenter liveData={liveData} />}
-          {page === "farms" && <div className="p-8"><h2 className="text-xl font-bold mb-4">Farms Management</h2><p>Farms module active.</p></div>}
+          {page === "farms" && <FarmsList liveData={liveData} setPage={setPage} />}
           {page === "settings" && <Settings />}
 
           {!["dashboard", "animals", "animal-profile", "report", "cases", "lab", "risk", "exposure", "diseases", "vaccination", "prevention", "gis", "clusters", "alerts", "sync", "farms", "settings"].includes(page) && (
