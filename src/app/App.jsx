@@ -19,7 +19,7 @@ import VaccinationPage from '../components/dashboard/VaccinationPage';
 import PreventionControl from '../components/dashboard/PreventionControl';
 import DiseaseTrendsClusters from '../components/dashboard/DiseaseTrendsClusters';
 import ReportsAlerts from '../components/dashboard/ReportsAlerts';
-
+import SyncCenter from '../components/offline/SyncCenter';
 import { useSimulation } from '../hooks/useSimulation';
 
 const NAV = {
@@ -90,8 +90,11 @@ export default function App() {
           {page === "alerts" && <ReportsAlerts liveData={liveData} actions={actions} setPage={setPage} />}
           
           {page === "gis" && <GISDashboard liveData={liveData} isRunning={isRunning} toggleSimulation={toggleSimulation} demoStep={demoStep} actions={actions} />}
+          {page === "sync" && <SyncCenter liveData={liveData} />}
+          {page === "farms" && <div className="p-8"><h2 className="text-xl font-bold mb-4">Farms Management</h2><p>Farms module active.</p></div>}
+          {page === "settings" && <div className="p-8"><h2 className="text-xl font-bold mb-4">System Settings</h2><p>Settings module active.</p></div>}
 
-          {!["dashboard", "animals", "animal-profile", "report", "cases", "lab", "risk", "exposure", "diseases", "vaccination", "prevention", "gis", "clusters", "alerts"].includes(page) && (
+          {!["dashboard", "animals", "animal-profile", "report", "cases", "lab", "risk", "exposure", "diseases", "vaccination", "prevention", "gis", "clusters", "alerts", "sync", "farms", "settings"].includes(page) && (
             <div className="p-8 text-center text-slate-500 flex flex-col items-center justify-center h-full">
               <h2 className="text-xl font-bold mb-2">🚧 {page.toUpperCase()} under construction</h2>
               <p>This module is currently stubbed in the new architecture.</p>
