@@ -38,6 +38,7 @@ export default function App() {
   const [role,         setRole]         = useState(null);
   const [page,         setPage]         = useState('dashboard');
   const [animalId,     setAnimalId]     = useState(null);
+  const [userName,     setUserName]     = useState('');
 
   // Unified navigation — supports setPage('animal-profile', 'MH-CAT-027')
   const navigate = useCallback((targetPage, param = null) => {
@@ -46,7 +47,12 @@ export default function App() {
   }, []);
 
   if (!role) {
-    return <Landing onSelectRole={(r) => { setRole(r); setPage('dashboard'); }} />;
+    return <Landing onSelectRole={(r) => { 
+      const NAME_MAP = { farmer: "R. Deshmukh", vet: "Dr. A. Kulkarni", official: "D. Officer", field: "F. Worker", admin: "Admin" };
+      setRole(r); 
+      setUserName(NAME_MAP[r] || "User");
+      setPage('dashboard'); 
+    }} />;
   }
 
   const handleLogout = () => { setRole(null); setPage('dashboard'); setAnimalId(null); };
@@ -68,6 +74,8 @@ export default function App() {
           openAlertCount={openAlertCount}
           offlineMode={offlineMode}
           pendingSync={pendingSync}
+          setPage={navigate}
+          userName={userName}
         />
         
         {/* Simulation banner */}
@@ -138,7 +146,7 @@ export default function App() {
             <ReportsAlerts liveData={liveData} actions={actions} setPage={navigate} />
           )}
           {page === 'gis' && (
-            <GISDashboard liveData={liveData} isRunning={isRunning} toggleSimulation={toggleSimulation} demoStep={demoStep} actions={actions} />
+            <GISDashboard liveData={liveData} isRunning={isRunning} toggleSimulation={toggleSimulation} demoStep={demoStep} actions={actions} setPage={navigate} />
           )}
 
           {/* ── OFFICIAL ──────────────────────────────────────────── */}
@@ -157,7 +165,7 @@ export default function App() {
             <SyncCenter liveData={liveData} actions={actions} offlineMode={offlineMode} pendingSync={pendingSync} />
           )}
           {page === 'settings' && (
-            <Settings liveData={liveData} actions={actions} />
+            <Settings liveData={liveData} actions={actions} userName={userName} setUserName={setUserName} role={role} />
           )}
 
           {/* ── FALLBACK ──────────────────────────────────────────── */}

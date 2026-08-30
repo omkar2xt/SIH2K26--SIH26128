@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Bell, Shield, Smartphone, Globe, Sliders, Save, CheckCircle2 } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Shield, Smartphone, Globe, Sliders, Save, CheckCircle2, User } from 'lucide-react';
 import { SectionTitle, Card } from '../common/UIComponents';
 
-export default function Settings() {
-  const [activeTab, setActiveTab] = useState('general');
+export default function Settings({ userName, setUserName, role }) {
+  const [activeTab, setActiveTab] = useState('profile');
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [profileName, setProfileName] = useState(userName || '');
+
+  const ROLE_LABEL = { farmer: "Farmer", vet: "Veterinarian", official: "District/Government Official", field: "Field Worker", admin: "Administrator" };
 
   const [prefs, setPrefs] = useState({
     simSpeed: "Demo Mode (Manual Stepping)",
@@ -18,6 +21,9 @@ export default function Settings() {
 
   const handleSave = () => {
     setIsSaving(true);
+    if (setUserName && activeTab === 'profile') {
+      setUserName(profileName);
+    }
     setTimeout(() => {
       setIsSaving(false);
       setShowSuccess(true);
@@ -26,6 +32,7 @@ export default function Settings() {
   };
 
   const tabs = [
+    { id: 'profile', label: 'My Profile', icon: User },
     { id: 'general', label: 'General Preferences', icon: Sliders },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security & Access', icon: Shield },
@@ -80,6 +87,37 @@ export default function Settings() {
 
         {/* Content Area */}
         <div className="space-y-6 md:col-span-2">
+          {activeTab === 'profile' && (
+            <Card className="p-6 animate-in fade-in">
+              <h3 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-100 pb-3">Personal Profile</h3>
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Full Name</label>
+                    <input 
+                      type="text" 
+                      value={profileName} 
+                      onChange={e => setProfileName(e.target.value)} 
+                      className="w-full border border-slate-200 rounded p-2 text-sm bg-slate-50 focus:ring-2 focus:ring-teal-500 outline-none" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Contact Number</label>
+                    <input type="text" defaultValue="+91 98765 43210" className="w-full border border-slate-200 rounded p-2 text-sm bg-slate-50 focus:ring-2 focus:ring-teal-500 outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Role / Designation</label>
+                  <input type="text" defaultValue={ROLE_LABEL[role] || "System User"} disabled className="w-full border border-slate-200 rounded p-2 text-sm bg-slate-100 text-slate-500 outline-none cursor-not-allowed" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Location / District</label>
+                  <input type="text" defaultValue="Nashik, Maharashtra" className="w-full border border-slate-200 rounded p-2 text-sm bg-slate-50 focus:ring-2 focus:ring-teal-500 outline-none" />
+                </div>
+              </div>
+            </Card>
+          )}
+
           {activeTab === 'general' && (
             <>
               <Card className="p-6 animate-in fade-in">
@@ -144,7 +182,7 @@ export default function Settings() {
             </>
           )}
 
-          {activeTab !== 'general' && (
+          {activeTab !== 'general' && activeTab !== 'profile' && (
             <Card className="p-12 animate-in fade-in flex flex-col items-center justify-center text-center text-slate-500 h-full border-dashed">
               <SettingsIcon size={32} className="text-slate-300 mb-4" />
               <h3 className="font-bold text-slate-700 text-lg mb-2 capitalize">{activeTab} Settings</h3>

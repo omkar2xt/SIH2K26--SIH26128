@@ -133,13 +133,22 @@ export default function AnimalsList({ liveData, setPage, role, actions }) {
               </label>
             ))}
             <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Species</span>
-              <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={form.speciesId} onChange={e => setForm(p => ({ ...p, speciesId: e.target.value }))}>
+              <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={form.speciesId} onChange={e => {
+                const newSpeciesId = e.target.value;
+                const availableBreeds = (liveData.breeds || []).filter(b => b.speciesId === newSpeciesId);
+                const defaultBreed = availableBreeds.length > 0 ? availableBreeds[0].id : 'UNKNOWN';
+                setForm(p => ({ ...p, speciesId: newSpeciesId, breedId: defaultBreed }));
+              }}>
                 {(liveData.species || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </label>
             <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Breed</span>
               <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={form.breedId} onChange={e => setForm(p => ({ ...p, breedId: e.target.value }))}>
-                {(liveData.breeds || []).filter(b => b.speciesId === form.speciesId).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {(() => {
+                  const availableBreeds = (liveData.breeds || []).filter(b => b.speciesId === form.speciesId);
+                  if (availableBreeds.length === 0) return <option value="UNKNOWN">Unknown / Local Breed</option>;
+                  return availableBreeds.map(b => <option key={b.id} value={b.id}>{b.name}</option>);
+                })()}
               </select>
             </label>
             <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Farm</span>

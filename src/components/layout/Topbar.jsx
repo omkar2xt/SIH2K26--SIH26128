@@ -1,13 +1,25 @@
-import React from 'react';
-import { Play, Square, User, Bell, Wifi } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Square, User, Bell, Wifi, WifiOff } from 'lucide-react';
 import { BRAND } from '../../utils/branding';
 
 const ROLE_LABEL = { farmer: "Farmer", vet: "Veterinarian", official: "District/Government Official", field: "Field Worker", admin: "Administrator" };
 const NAME_MAP = { farmer: "R. Deshmukh", vet: "Dr. A. Kulkarni", official: "D. Officer", field: "F. Worker", admin: "Admin" };
 
-export default function Topbar({ role, pageName, isRunning, toggleSimulation }) {
-  const shortName = NAME_MAP[role] || "User";
+export default function Topbar({ role, pageName, isRunning, toggleSimulation, openAlertCount, setPage, userName }) {
+  const shortName = userName || NAME_MAP[role] || "User";
   const userRole = ROLE_LABEL[role] || "User";
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   return (
     <div className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10 shrink-0">
@@ -37,19 +49,34 @@ export default function Topbar({ role, pageName, isRunning, toggleSimulation }) 
         <div className="h-6 w-px bg-slate-200"></div>
         
         <div className="flex items-center gap-4">
-          <button className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700">
-            <Wifi size={13} /> Online
-          </button>
+          {isOnline ? (
+            <button className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700">
+              <Wifi size={13} /> Online
+            </button>
+          ) : (
+            <button className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 animate-pulse">
+              <WifiOff size={13} /> Offline
+            </button>
+          )}
 
-          <button className="relative text-slate-500 hover:text-slate-700">
+          <button 
+            className="relative text-slate-500 hover:text-slate-700"
+            onClick={() => setPage && setPage('alerts')}
+            title="View Alerts"
+          >
             <Bell size={18} />
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 text-[8px] font-bold text-white rounded-full flex items-center justify-center">
-              3
-            </span>
+            {openAlertCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-600 text-[9px] font-bold text-white rounded-full flex items-center justify-center">
+                {openAlertCount > 99 ? '99+' : openAlertCount}
+              </span>
+            )}
           </button>
           
-          <div className="hidden items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 sm:flex cursor-pointer border border-slate-200">
-            <div className="w-7 h-7 rounded-full bg-teal-700 flex items-center justify-center text-xs font-bold text-white">
+          <div 
+            onClick={() => setPage && setPage('settings')}
+            className="hidden items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 sm:flex cursor-pointer border border-slate-200 hover:bg-slate-100 transition-colors"
+          >
+            <div className="w-7 h-7 rounded-full bg-teal-700 flex items-center justify-center text-xs font-bold text-white shadow-sm">
               {userRole[0]}
             </div>
             <div className="text-xs">

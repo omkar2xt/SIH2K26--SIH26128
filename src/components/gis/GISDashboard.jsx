@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import GISMap from "./GISMap";
 import { ShieldAlert, AlertTriangle, Search, Filter, Play, Pause, RefreshCw, Layers } from "lucide-react";
 
-export default function GISDashboard({ liveData, isRunning, toggleSimulation, demoStep, actions }) { 
+export default function GISDashboard({ liveData, isRunning, toggleSimulation, demoStep, actions, setPage }) { 
   const [geoData, setGeoData] = useState(null);
   
   // Layer toggles
@@ -30,9 +30,14 @@ export default function GISDashboard({ liveData, isRunning, toggleSimulation, de
     setSelectedDistrict(name);
   };
 
+  const handleFarmSelect = (farm) => {
+    if (setPage) setPage('farms');
+    else alert(`Navigating to Farm: ${farm.name}`);
+  };
+
   const handleAnimalSelect = (id) => {
-    alert(`Navigating to Animal Profile: ${id}`);
-    // Ideally this would push state/setPage to "animal-profile" with animalId
+    if (setPage) setPage('animal-profile', id);
+    else alert(`Navigating to Animal Profile: ${id}`);
   };
 
   return (
@@ -85,7 +90,7 @@ export default function GISDashboard({ liveData, isRunning, toggleSimulation, de
               liveData={liveData} 
               layers={layers}
               onDistrictSelect={handleDistrictSelect}
-              onFarmSelect={() => {}}
+              onFarmSelect={handleFarmSelect}
               onAnimalSelect={handleAnimalSelect}
             />
           </div>
@@ -121,29 +126,43 @@ export default function GISDashboard({ liveData, isRunning, toggleSimulation, de
           <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 md:hidden" onClick={() => setSelectedDistrict(null)} />
 
           {selectedDistrict ? (
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 shrink-0">
-              <div className="flex justify-between items-start mb-3 border-b pb-3">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900 tracking-tight">{selectedDistrict}</h3>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">District Intelligence</p>
-                </div>
-                <button onClick={() => setSelectedDistrict(null)} className="md:hidden p-1 bg-slate-100 rounded-full text-slate-500">X</button>
-              </div>
+            (() => {
+              const districtFarms = liveData.farms.filter(f => f.district === selectedDistrict);
+              const farmIds = districtFarms.map(f => f.id);
+              const districtAnimals = liveData.animals.filter(a => farmIds.includes(a.farmId));
+              const animalIds = districtAnimals.map(a => a.id);
+              const districtAlerts = liveData.alerts.filter(a => animalIds.includes(a.animalId));
+              const districtExposure = (liveData.exposureEvents || []).filter(e => animalIds.includes(e.sourceId) || animalIds.includes(e.targetId));
               
-              <div className="space-y-4 text-sm">
-                <div className="flex justify-between items-center"><span className="text-slate-600">Animals Monitored</span><span className="font-bold">{liveData.animals.length}</span></div>
-                <div className="flex justify-between items-center"><span className="text-slate-600">Active Farms</span><span className="font-bold">{liveData.farms.length}</span></div>
-                
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <div className="flex justify-between items-center text-red-700 font-bold mb-2"><span>Open Alerts</span><span>{liveData.alerts.length}</span></div>
-                  <div className="flex justify-between items-center text-orange-700 font-bold mb-2"><span>Potential Exposure</span><span>{liveData.exposureEvents?.length || 0}</span></div>
+              return (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 shrink-0">
+                  <div className="flex justify-between items-start mb-3 border-b pb-3">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-900 tracking-tight">{selectedDistrict}</h3>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">District Intelligence</p>
+                    </div>
+                    <button onClick={() => setSelectedDistrict(null)} className="md:hidden p-1 bg-slate-100 rounded-full text-slate-500">X</button>
+                  </div>
+                  
+                  <div className="space-y-4 text-sm">
+                    <div className="flex justify-between items-center"><span className="text-slate-600">Animals Monitored</span><span className="font-bold">{districtAnimals.length}</span></div>
+                    <div className="flex justify-between items-center"><span className="text-slate-600">Active Farms</span><span className="font-bold">{districtFarms.length}</span></div>
+                    
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                      <div className="flex justify-between items-center text-red-700 font-bold mb-2"><span>Open Alerts</span><span>{districtAlerts.length}</span></div>
+                      <div className="flex justify-between items-center text-orange-700 font-bold mb-2"><span>Potential Exposure</span><span>{districtExposure.length}</span></div>
+                    </div>
+                    
+                    <button 
+                      onClick={() => alert(`View Cases feature for ${selectedDistrict} will be available in the Cases module.`)}
+                      className="w-full mt-4 bg-teal-800 text-white font-bold py-2 rounded hover:bg-teal-700 transition-colors"
+                    >
+                      View Cases in {selectedDistrict}
+                    </button>
+                  </div>
                 </div>
-                
-                <button className="w-full mt-4 bg-teal-800 text-white font-bold py-2 rounded hover:bg-teal-700 transition-colors">
-                  View Cases in {selectedDistrict}
-                </button>
-              </div>
-            </div>
+              );
+            })()
           ) : (
             <div className="hidden md:flex bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex-col items-center justify-center text-center h-48 text-slate-500 text-sm shrink-0">
               <ShieldAlert size={32} className="text-slate-300 mb-3" />
