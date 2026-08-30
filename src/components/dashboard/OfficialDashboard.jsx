@@ -1,195 +1,150 @@
-import React from 'react';
-import { PawPrint, ClipboardList, Layers, Syringe, ShieldAlert, FlaskConical, AlertTriangle, Network } from 'lucide-react';
-import { SectionTitle, StatCard, Card, RiskBadge } from '../common/UIComponents';
-import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import React, { useState, useMemo } from 'react';
+import { MapPin, Shield, Plus, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Card, SectionTitle } from '../common/UIComponents';
+import { reportService } from '../../services/reportService';
 
-export default function OfficialDashboard({ liveData, setPage }) {
-  // --- DERIVED METRICS ---
-  const totalAnimals = liveData.animals.length;
-  const activeCases = liveData.cases.filter(c => c.stage !== "Closed").length;
-  const potentialClusters = liveData.clusters?.length || 0;
-  const coveragePercent = 78; // In a real app this would calculate from liveData.vaccinations
-  const highRiskAnimals = liveData.animals.filter(a => a.riskEval?.healthRiskLevel === "RED" || a.riskEval?.healthRiskLevel === "CRITICAL").length;
-  const potentialExposures = liveData.exposureEvents?.length || 0;
-  
-  const pendingLabs = liveData.labSamples.filter(s => s.result === "Pending").length;
-  const activeContainment = liveData.containment?.filter(c => c.status === "ACTIVE").length || 0;
-  const criticalAlerts = liveData.alerts.filter(a => a.severity === "CRITICAL" && a.status === "OPEN").length;
-  
-  // High Risk Districts (derive from animal risks and clusters)
-  const districtsMap = {};
-  liveData.farms.forEach(f => {
-    if (!districtsMap[f.district]) districtsMap[f.district] = { farms: 0, animals: 0, highRisk: 0, alerts: 0, clusters: 0, exposures: 0, risk: "GREEN" };
-    districtsMap[f.district].farms += 1;
-  });
-  liveData.animals.forEach(a => {
-    const farm = liveData.farms.find(f => f.id === a.farmId);
-    if (farm) {
-      const d = districtsMap[farm.district];
-      d.animals += 1;
-      if (a.riskEval?.healthRiskLevel === "RED" || a.riskEval?.healthRiskLevel === "CRITICAL") d.highRisk += 1;
-      const hasAlert = liveData.alerts.some(al => al.animalId === a.id && al.status === "OPEN");
-      if (hasAlert) d.alerts += 1;
-      
-      const hasExposure = liveData.exposureEvents?.some(e => e.sourceId === a.id || e.targetId === a.id);
-      if (hasExposure) d.exposures += 1;
-    }
-  });
-  
-  liveData.clusters?.forEach(c => {
-    if (districtsMap[c.district]) districtsMap[c.district].clusters += 1;
-  });
-  
-  // Calculate risk level for each district
-  Object.keys(districtsMap).forEach(dName => {
-    const d = districtsMap[dName];
-    if (d.highRisk > 0 || d.clusters > 0) d.risk = "RED";
-    else if (d.alerts > 0 || d.exposures > 0) d.risk = "ORANGE";
-  });
-  
-  const highRiskDistricts = Object.values(districtsMap).filter(d => d.risk === "RED" || d.risk === "CRITICAL").length;
+const DIST_RISK_COLOR = { RED:'bg-red-100 text-red-800 border-red-200', ORANGE:'bg-orange-100 text-orange-800 border-orange-200', YELLOW:'bg-amber-100 text-amber-800 border-amber-200', GREEN:'bg-emerald-100 text-emerald-800 border-emerald-200' };
 
-  // Disease Distribution Chart (Demo data generated from rules engine results)
-  const diseaseCounts = {};
-  liveData.animals.forEach(a => {
-    a.riskEval?.diseaseRisks?.forEach(dr => {
-      diseaseCounts[dr.disease.name] = (diseaseCounts[dr.disease.name] || 0) + 1;
-    });
-  });
-  const diseaseChartData = Object.keys(diseaseCounts).map(name => ({
-    disease: name.substring(0, 15) + (name.length > 15 ? '...' : ''),
-    cases: diseaseCounts[name]
-  }));
-  if (diseaseChartData.length === 0) diseaseChartData.push({ disease: "No active risks", cases: 0 });
+export default function OfficialDashboard({ liveData, actions }) {
+  const [showZoneForm, setShowZoneForm] = useState(false);
+  const [zoneForm, setZoneForm] = useState({ district:'Nashik', description:'', diseaseId:'', reason:'', restrictedMovement: true });
+  const [saved, setSaved] = useState('');
+
+  const summary = useMemo(() => reportService.getStateSummary(), [liveData]);
+  const districtStats = useMemo(() => reportService.getDistrictStats(), [liveData]);
+  const zones = liveData.containmentZones || [];
+
+  function createZone() {
+    actions.addContainmentZone({ ...zoneForm, status: 'ACTIVE' });
+    setShowZoneForm(false);
+    setZoneForm({ district:'Nashik', description:'', diseaseId:'', reason:'', restrictedMovement: true });
+    setSaved('Containment zone activated!'); setTimeout(()=>setSaved(''), 2500);
+  }
+
+  function toggleZone(id, status) {
+    actions.updateContainmentStatus(id, status === 'ACTIVE' ? 'LIFTED' : 'ACTIVE');
+  }
 
   return (
-    <div className="animate-in fade-in duration-300 space-y-6">
-      <SectionTitle eyebrow="District & State Decision Support" title="Maharashtra Livestock Health Surveillance">
-        <div className="flex gap-2">
-          <select className="text-sm border border-slate-200 rounded p-1.5"><option>All Districts</option><option>Nashik</option></select>
-          <select className="text-sm border border-slate-200 rounded p-1.5"><option>All Diseases</option></select>
-          <select className="text-sm border border-slate-200 rounded p-1.5"><option>All Species</option></select>
-          <select className="text-sm border border-slate-200 rounded p-1.5"><option>Last 30 Days</option></select>
-        </div>
+    <div className="space-y-4">
+      <SectionTitle eyebrow="Government Control Room" title="State Animal Health Dashboard">
+        {saved && <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">{saved}</span>}
       </SectionTitle>
-      
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total Animals Tracked" value={totalAnimals} icon={PawPrint} tone="teal" />
-        <StatCard label="Active Veterinary Cases" value={activeCases} icon={ClipboardList} tone="teal" />
-        <StatCard label="High-Risk Animals" value={highRiskAnimals} icon={ShieldAlert} tone="red" />
-        <StatCard label="Potential Exposures" value={potentialExposures} icon={Network} tone="orange" />
-        <StatCard label="Potential Clusters" value={potentialClusters} icon={Layers} tone="red" />
-        <StatCard label="Lab Pending" value={pendingLabs} icon={FlaskConical} tone="orange" />
-        <StatCard label="Vaccination Coverage" value={`${coveragePercent}%`} icon={Syringe} tone="emerald" />
-        <StatCard label="Active Containment Zones" value={activeContainment} icon={AlertTriangle} tone="red" />
+
+      {/* State summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Animals',     value: summary.totalAnimals,    bg: 'bg-white' },
+          { label: 'Open Alerts',       value: summary.openAlerts,      bg: 'bg-red-50 border-red-200', textColor:'text-red-900' },
+          { label: 'Active Cases',      value: summary.activeCases,     bg: 'bg-amber-50 border-amber-200', textColor:'text-amber-900' },
+          { label: 'High-Risk Animals', value: summary.highRiskAnimals, bg: 'bg-orange-50 border-orange-200', textColor:'text-orange-900' },
+          { label: 'Pending Lab Tests', value: summary.pendingLabs,     bg: 'bg-purple-50 border-purple-200', textColor:'text-purple-900' },
+          { label: 'Active Exposures',  value: summary.activeExposures, bg: 'bg-blue-50 border-blue-200', textColor:'text-blue-900' },
+          { label: 'Containment Zones', value: summary.containmentZones,bg: 'bg-rose-50 border-rose-200', textColor:'text-rose-900' },
+          { label: 'Overdue Vax',       value: summary.overdueVaccinations, bg: 'bg-slate-50' },
+        ].map(s => (
+          <Card key={s.label} className={`p-4 text-center ${s.bg}`}>
+            <div className={`text-2xl font-black ${s.textColor || 'text-slate-900'}`}>{s.value}</div>
+            <div className="text-xs font-semibold text-slate-500 mt-0.5">{s.label}</div>
+          </Card>
+        ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Current Situation & Operational Queue */}
-        <div className="space-y-6 lg:col-span-1">
-          <Card className="p-5">
-            <h3 className="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wide">Current Situation</h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center"><span className="text-slate-600">Active Alerts</span><span className="font-bold">{liveData.alerts.length}</span></div>
-              <div className="flex justify-between items-center"><span className="text-slate-600">New Alerts Today</span><span className="font-bold">{liveData.alerts.length}</span></div>
-              <div className="flex justify-between items-center"><span className="text-slate-600">Critical Cases</span><span className="font-bold">{criticalAlerts}</span></div>
-              <div className="flex justify-between items-center"><span className="text-slate-600">High-Risk Districts</span><span className="font-bold text-red-600">{highRiskDistricts}</span></div>
-              <div className="flex justify-between items-center"><span className="text-slate-600">Exposure Cases</span><span className="font-bold text-orange-600">{potentialExposures}</span></div>
-            </div>
-          </Card>
-          
-          <Card className="p-5">
-            <h3 className="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wide">Operational Queue</h3>
-            <div className="space-y-3">
-              <div className="p-3 bg-red-50 border border-red-100 rounded-lg flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-red-800">Critical Alerts</div>
-                  <div className="text-[10px] text-red-600">Require immediate assignment</div>
-                </div>
-                <div className="text-xl font-bold text-red-700">{criticalAlerts}</div>
-              </div>
-              <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-amber-800">Pending Lab Results</div>
-                  <div className="text-[10px] text-amber-600">Samples submitted, awaiting data</div>
-                </div>
-                <div className="text-xl font-bold text-amber-700">{pendingLabs}</div>
-              </div>
-              <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-blue-800">Field Review Cases</div>
-                  <div className="text-[10px] text-blue-600">Veterinary verification required</div>
-                </div>
-                <div className="text-xl font-bold text-blue-700">{liveData.cases.filter(c => c.stage === "Field Review").length}</div>
-              </div>
-              <div className="p-3 bg-slate-800 border border-slate-900 rounded-lg flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-white">Containment Tasks</div>
-                  <div className="text-[10px] text-slate-300">Active monitoring zones</div>
-                </div>
-                <div className="text-xl font-bold text-white">{activeContainment}</div>
-              </div>
-            </div>
-          </Card>
+      {/* Containment zones */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center gap-1.5"><Shield size={15} />Containment Zones</h3>
+          <button onClick={() => setShowZoneForm(s => !s)} className="flex items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600">
+            <Plus size={12} /> Create Zone
+          </button>
         </div>
 
-        {/* District Risk & Disease Distribution */}
-        <div className="space-y-6 lg:col-span-2">
-          <Card className="p-0 overflow-x-auto">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center min-w-[600px]">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">District Risk Overview</h3>
-              <button onClick={() => setPage("gis")} className="text-xs bg-teal-800 text-white px-3 py-1 rounded font-bold hover:bg-teal-700">View Map</button>
+        {showZoneForm && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-4">
+            <h4 className="font-bold text-rose-900 text-sm mb-3">New Containment Zone</h4>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">District</span>
+                <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={zoneForm.district} onChange={e => setZoneForm(f => ({ ...f, district: e.target.value }))}>
+                  {(liveData.districts || []).map(d => <option key={d.id}>{d.id}</option>)}
+                </select>
+              </label>
+              <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Disease</span>
+                <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={zoneForm.diseaseId} onChange={e => setZoneForm(f => ({ ...f, diseaseId: e.target.value }))}>
+                  <option value="">— Select Disease —</option>
+                  {(liveData.diseases || []).map(d => <option key={d.id} value={d.id}>{d.shortName}</option>)}
+                </select>
+              </label>
+              <label className="block sm:col-span-2"><span className="text-xs font-semibold text-slate-600 block mb-1">Description</span>
+                <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={zoneForm.description} onChange={e => setZoneForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. 5 km radius containment — FMD outbreak" />
+              </label>
+              <label className="block sm:col-span-2"><span className="text-xs font-semibold text-slate-600 block mb-1">Reason / Authority</span>
+                <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={zoneForm.reason} onChange={e => setZoneForm(f => ({ ...f, reason: e.target.value }))} placeholder="e.g. Lab-confirmed FMD — Section 12 Powers" />
+              </label>
             </div>
-            <table className="w-full text-left text-sm">
-              <thead className="bg-white text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3">District</th>
-                  <th className="px-4 py-3 text-right">Animals</th>
-                  <th className="px-4 py-3 text-right">Farms</th>
-                  <th className="px-4 py-3 text-right">Alerts</th>
-                  <th className="px-4 py-3 text-right">High-Risk</th>
-                  <th className="px-4 py-3 text-right">Clusters</th>
-                  <th className="px-4 py-3 text-right">Exposure</th>
-                  <th className="px-4 py-3">Risk</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {Object.keys(districtsMap).length > 0 ? Object.keys(districtsMap).map(dName => {
-                  const d = districtsMap[dName];
-                  return (
-                    <tr key={dName} className="hover:bg-slate-50 cursor-pointer" onClick={() => setPage("gis")}>
-                      <td className="px-4 py-3 font-bold text-slate-800">{dName}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{d.animals}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{d.farms}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{d.alerts}</td>
-                      <td className="px-4 py-3 text-right text-red-600 font-bold">{d.highRisk}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{d.clusters}</td>
-                      <td className="px-4 py-3 text-right text-orange-600 font-bold">{d.exposures}</td>
-                      <td className="px-4 py-3"><RiskBadge level={d.risk} /></td>
-                    </tr>
-                  )
-                }) : (
-                  <tr><td colSpan="8" className="p-8 text-center text-slate-500">No district data available.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </Card>
-          
-          <Card className="p-5">
-            <h3 className="mb-4 text-sm font-bold text-slate-900 uppercase tracking-wide">Disease Distribution <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded ml-2 normal-case">DEMO DATA</span></h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={diseaseChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="disease" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="cases" fill="#0d9488" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
+            <div className="flex gap-2 mt-3">
+              <button onClick={createZone} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-600">Activate Zone</button>
+              <button onClick={() => setShowZoneForm(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {zones.length === 0 && <p className="text-slate-400 text-sm py-4 text-center">No containment zones active.</p>}
+        {zones.map(z => {
+          const disease = (liveData.diseases || []).find(d => d.id === z.diseaseId);
+          return (
+            <div key={z.id} className={`rounded-lg border p-3 mb-2 ${z.status === 'ACTIVE' ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
+              <div className="flex justify-between items-start gap-2">
+                <div>
+                  <div className="font-bold text-slate-900 flex items-center gap-2">
+                    <MapPin size={14} className={z.status === 'ACTIVE' ? 'text-rose-600' : 'text-slate-400'} />
+                    {z.district} — {disease?.shortName || '—'}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${z.status === 'ACTIVE' ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{z.status}</span>
+                  </div>
+                  <div className="text-sm text-slate-600 mt-0.5">{z.description}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{z.reason}</div>
+                  <div className="text-xs text-slate-400">Started: {new Date(z.startTime).toLocaleString('en-IN')}</div>
+                </div>
+                <button onClick={() => toggleZone(z.id, z.status)} className={`text-xs font-semibold px-2 py-1 rounded border ${z.status === 'ACTIVE' ? 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200' : 'bg-rose-100 text-rose-800 border-rose-200 hover:bg-rose-200'}`}>
+                  {z.status === 'ACTIVE' ? 'Lift Zone' : 'Reactivate'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </Card>
+
+      {/* District risk table */}
+      <Card className="overflow-x-auto p-0">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">District Risk Overview</h3>
         </div>
-      </div>
+        <table className="w-full text-sm text-left">
+          <thead className="text-xs uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="px-4 py-3">District</th><th className="px-4 py-3 text-right">Animals</th>
+              <th className="px-4 py-3 text-right">Farms</th><th className="px-4 py-3 text-right">Open Alerts</th>
+              <th className="px-4 py-3 text-right">High-Risk</th><th className="px-4 py-3 text-right">Exposures</th>
+              <th className="px-4 py-3 text-right">Active Cases</th><th className="px-4 py-3">Risk Level</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {districtStats.map(d => (
+              <tr key={d.district} className="hover:bg-slate-50">
+                <td className="px-4 py-3 font-bold text-slate-800">{d.district}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.animals}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.farms}</td>
+                <td className="px-4 py-3 text-right font-bold text-slate-700">{d.openAlerts}</td>
+                <td className="px-4 py-3 text-right font-bold text-red-700">{d.highRisk}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.exposures}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.activeCases}</td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${DIST_RISK_COLOR[d.riskLevel]}`}>{d.riskLevel}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

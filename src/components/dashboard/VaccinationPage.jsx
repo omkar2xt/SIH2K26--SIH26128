@@ -1,119 +1,177 @@
-import React from 'react';
-import { SectionTitle, Card } from '../common/UIComponents';
-import { Syringe, AlertTriangle, ShieldCheck } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Syringe, Plus, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Card, SectionTitle, StatCard } from '../common/UIComponents';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { vaccinationService } from '../../services/vaccinationService';
 
-export default function VaccinationPage({ liveData, role }) {
-  // If role is farmer, just show a simple view (already handled in App routing technically, but let's be safe)
-  if (role === "farmer" || role === "field") {
-    return (
-      <div className="animate-in fade-in duration-300">
-        <SectionTitle title="Herd Vaccination Status" />
-        <Card className="p-8 text-center text-slate-500">
-          No vaccination campaigns currently active for your registered farms.
-        </Card>
-      </div>
-    );
+const inputCls = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100";
+
+export default function VaccinationPage({ liveData, role, actions }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ animalId:'', diseaseId:'', vaccineName:'', date: new Date().toISOString().split('T')[0], nextDue:'', batchNo:'', administeredBy:'' });
+  const [saved, setSaved] = useState('');
+
+  const allVacs   = useMemo(() => vaccinationService.getAll(), [liveData]);
+  const overdue   = useMemo(() => vaccinationService.getOverdue(), [liveData]);
+  const byDistrict= useMemo(() => vaccinationService.getCoverageByDistrict(), [liveData]);
+  const byDisease = useMemo(() => vaccinationService.getCoverageByDisease(), [liveData]);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  function submit() {
+    actions.addVaccination({ ...form });
+    setShowAdd(false);
+    setForm({ animalId:'', diseaseId:'', vaccineName:'', date: new Date().toISOString().split('T')[0], nextDue:'', batchNo:'', administeredBy:'' });
+    setSaved('Vaccination recorded!'); setTimeout(() => setSaved(''), 2500);
   }
 
-  // Official / Vet Role - District level surveillance
-  // Mock data for the Government Dashboard
-  const coverageData = [
-    { district: "Nashik", species: "Cattle", eligible: 412, vaccinated: 318, coverage: 77.2, pending: 94, lastCampaign: "2026-06-15" },
-    { district: "Nashik", species: "Buffalo", eligible: 156, vaccinated: 140, coverage: 89.7, pending: 16, lastCampaign: "2026-06-15" },
-    { district: "Pune", species: "Cattle", eligible: 840, vaccinated: 512, coverage: 61.0, pending: 328, lastCampaign: "2025-11-10" },
-    { district: "Pune", species: "Sheep", eligible: 1200, vaccinated: 450, coverage: 37.5, pending: 750, lastCampaign: "2025-08-01" },
-  ];
-
   return (
-    <div className="animate-in fade-in duration-300 space-y-6">
-      <SectionTitle eyebrow="District & State Surveillance" title="Vaccination Coverage">
-        <div className="flex gap-2">
-          <select className="text-sm border border-slate-200 rounded p-1.5"><option>FMD (Foot and Mouth)</option><option>HS</option></select>
-          <select className="text-sm border border-slate-200 rounded p-1.5"><option>All Districts</option></select>
-          <button className="bg-teal-800 text-white px-3 py-1.5 rounded text-sm font-bold">Export Report</button>
+    <div className="space-y-4">
+      <SectionTitle eyebrow="Herd Immunity" title="Vaccination Coverage & Records">
+        <div className="flex items-center gap-2">
+          {saved && <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">{saved}</span>}
+          <button onClick={() => setShowAdd(s => !s)} className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-600">
+            <Plus size={14} /> Add Record
+          </button>
         </div>
       </SectionTitle>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <Card className="p-4 bg-teal-50 border-teal-100 flex items-center gap-4">
-          <div className="p-3 bg-teal-100 text-teal-800 rounded-full"><Syringe size={24} /></div>
-          <div>
-            <div className="text-xs font-bold text-teal-800 uppercase">Statewide FMD Coverage</div>
-            <div className="text-2xl font-bold text-teal-900">68.4%</div>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Total Vaccination Records" value={allVacs.length} icon={Syringe} tone="teal" />
+        <StatCard label="Overdue Animals"    value={overdue.length}   icon={AlertTriangle} tone="red" />
+        <StatCard label="Districts Tracked"  value={byDistrict.length} icon={TrendingUp}   tone="slate" />
+        <StatCard label="Diseases Covered"   value={byDisease.length}  icon={CheckCircle2} tone="emerald" />
+      </div>
+
+      {/* Add form */}
+      {showAdd && (
+        <Card className="p-4 border-teal-200">
+          <h3 className="font-bold text-slate-800 mb-3 text-sm">New Vaccination Record</h3>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Animal</span>
+              <select className={inputCls} value={form.animalId} onChange={e => setForm(f => ({ ...f, animalId: e.target.value }))}>
+                <option value="">— Select —</option>
+                {(liveData.animals || []).map(a => <option key={a.id} value={a.id}>{a.id} ({a.speciesId})</option>)}
+              </select>
+            </label>
+            <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Disease</span>
+              <select className={inputCls} value={form.diseaseId} onChange={e => setForm(f => ({ ...f, diseaseId: e.target.value }))}>
+                <option value="">— Select —</option>
+                {(liveData.diseases || []).map(d => <option key={d.id} value={d.id}>{d.shortName}</option>)}
+              </select>
+            </label>
+            <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Vaccine Name</span>
+              <input className={inputCls} value={form.vaccineName} onChange={e => setForm(f => ({ ...f, vaccineName: e.target.value }))} placeholder="e.g. FMD Bivalent" />
+            </label>
+            <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Date Given</span>
+              <input type="date" className={inputCls} value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            </label>
+            <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Next Due</span>
+              <input type="date" className={inputCls} value={form.nextDue} onChange={e => setForm(f => ({ ...f, nextDue: e.target.value }))} />
+            </label>
+            <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Batch No.</span>
+              <input className={inputCls} value={form.batchNo} onChange={e => setForm(f => ({ ...f, batchNo: e.target.value }))} />
+            </label>
+            <label className="block sm:col-span-2"><span className="text-xs font-semibold text-slate-600 block mb-1">Administered By</span>
+              <input className={inputCls} value={form.administeredBy} onChange={e => setForm(f => ({ ...f, administeredBy: e.target.value }))} />
+            </label>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={submit} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600">Save</button>
+            <button onClick={() => setShowAdd(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">Cancel</button>
           </div>
         </Card>
-        <Card className="p-4 bg-amber-50 border-amber-100 flex items-center gap-4">
-          <div className="p-3 bg-amber-100 text-amber-800 rounded-full"><AlertTriangle size={24} /></div>
-          <div>
-            <div className="text-xs font-bold text-amber-800 uppercase">Low Coverage Areas</div>
-            <div className="text-2xl font-bold text-amber-900">14 Blocks</div>
-          </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* District coverage chart */}
+        <Card className="p-4">
+          <h3 className="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">Coverage by District (%)</h3>
+          {byDistrict.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={byDistrict} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                <XAxis type="number" domain={[0,100]} tick={{ fontSize:11 }} />
+                <YAxis dataKey="district" type="category" tick={{ fontSize:11 }} width={100} />
+                <Tooltip formatter={(v) => `${v}%`} />
+                <Bar dataKey="coverage" radius={[0,4,4,0]}>
+                  {byDistrict.map((d,i) => <Cell key={i} fill={d.coverage >= 70 ? '#059669' : d.coverage >= 40 ? '#d97706' : '#dc2626'} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="text-slate-400 text-sm py-8 text-center">No data.</p>}
         </Card>
-        <Card className="p-4 bg-blue-50 border-blue-100 flex items-center gap-4">
-          <div className="p-3 bg-blue-100 text-blue-800 rounded-full"><ShieldCheck size={24} /></div>
-          <div>
-            <div className="text-xs font-bold text-blue-800 uppercase">Doses Administered (YTD)</div>
-            <div className="text-2xl font-bold text-blue-900">1.2M</div>
+
+        {/* Overdue */}
+        <Card className="p-4">
+          <h3 className="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">Overdue Vaccinations ({overdue.length})</h3>
+          <div className="space-y-2 max-h-[200px] overflow-y-auto">
+            {overdue.length === 0 && <p className="text-emerald-700 text-sm font-semibold">✓ All vaccinations current!</p>}
+            {overdue.map(v => (
+              <div key={v.id} className="flex justify-between items-center text-sm border-b border-slate-100 pb-1.5">
+                <div>
+                  <div className="font-bold text-slate-800">{v.animalId}</div>
+                  <div className="text-xs text-slate-500">{v.vaccineName} · due {v.nextDue}</div>
+                </div>
+                <span className="text-xs font-bold bg-red-100 text-red-800 border border-red-200 px-2 py-0.5 rounded-full">OVERDUE</span>
+              </div>
+            ))}
           </div>
         </Card>
       </div>
 
-      <div className="grid lg:grid-cols-4 gap-6">
-        <Card className="p-0 lg:col-span-3 overflow-hidden">
-          <div className="p-4 bg-slate-50 border-b border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Coverage by District <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded ml-2 normal-case">DEMO DATA</span></h3>
-          </div>
-          <table className="w-full text-left text-sm">
-            <thead className="bg-white text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <tr>
-                <th className="px-4 py-3">District</th>
-                <th className="px-4 py-3">Species</th>
-                <th className="px-4 py-3 text-right">Eligible Animals</th>
-                <th className="px-4 py-3 text-right">Vaccinated</th>
-                <th className="px-4 py-3 text-right">Pending</th>
-                <th className="px-4 py-3 text-right">Coverage</th>
-                <th className="px-4 py-3">Last Campaign</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {coverageData.map((row, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-bold text-slate-800">{row.district}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.species}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{row.eligible}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{row.vaccinated}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{row.pending}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`font-bold ${row.coverage < 50 ? 'text-red-600' : row.coverage < 80 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                      {row.coverage}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{row.lastCampaign}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-
-        <div className="space-y-4 lg:col-span-1">
-          <Card className="p-4">
-            <h3 className="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wide flex items-center gap-2">
-              <AlertTriangle size={16} className="text-red-600" />
-              Vaccination Alerts
-            </h3>
-            <div className="space-y-3 text-sm">
-              <div className="p-3 bg-red-50 border border-red-100 rounded-lg">
-                <div className="font-bold text-red-900">Pune: Sheep (37.5%)</div>
-                <div className="text-xs text-red-700 mt-1">Critical low coverage. High vulnerability to upcoming seasonal risks.</div>
+      {/* Disease coverage */}
+      <Card className="p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">Coverage by Disease</h3>
+        <div className="space-y-3">
+          {byDisease.map(r => (
+            <div key={r.disease?.id}>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="font-semibold text-slate-700">{r.disease?.shortName} — {r.disease?.name}</span>
+                <span className={`font-bold ${r.coverage >= 70 ? 'text-emerald-600' : r.coverage >= 40 ? 'text-amber-600' : 'text-red-600'}`}>{r.coverage}%</span>
               </div>
-              <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg">
-                <div className="font-bold text-amber-900">Pune: Cattle (61.0%)</div>
-                <div className="text-xs text-amber-700 mt-1">Campaign overdue by 3 months. Plan immediate booster rollout.</div>
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className={`h-full rounded-full ${r.coverage >= 70 ? 'bg-emerald-500' : r.coverage >= 40 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${r.coverage}%` }} />
               </div>
             </div>
-          </Card>
+          ))}
         </div>
-      </div>
+      </Card>
+
+      {/* Records table */}
+      <Card className="overflow-x-auto p-0">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">All Vaccination Records ({allVacs.length})</h3>
+        </div>
+        <table className="w-full text-sm text-left min-w-[700px]">
+          <thead className="text-xs uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="px-4 py-3">Animal</th><th className="px-4 py-3">Vaccine</th>
+              <th className="px-4 py-3">Disease</th><th className="px-4 py-3">Date Given</th>
+              <th className="px-4 py-3">Next Due</th><th className="px-4 py-3">Administered By</th>
+              <th className="px-4 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {allVacs.map(v => {
+              const status = !v.nextDue ? 'Current' : v.nextDue < today ? 'Overdue' : 'Current';
+              const disease = (liveData.diseases || []).find(d => d.id === v.diseaseId);
+              return (
+                <tr key={v.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-bold text-teal-800 text-xs">{v.animalId}</td>
+                  <td className="px-4 py-3 text-slate-800">{v.vaccineName}</td>
+                  <td className="px-4 py-3 text-slate-600 text-xs">{disease?.shortName || v.diseaseId}</td>
+                  <td className="px-4 py-3 text-slate-600">{v.date}</td>
+                  <td className="px-4 py-3 text-slate-600">{v.nextDue || '—'}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{v.administeredBy || '—'}</td>
+                  <td className="px-4 py-3"><span className={`text-xs font-bold px-2 py-0.5 rounded-full ${status === 'Overdue' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>{status}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

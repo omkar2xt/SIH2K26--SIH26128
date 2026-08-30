@@ -1,144 +1,179 @@
-import React, { useState } from 'react';
-import { SectionTitle, Card, RiskBadge } from '../common/UIComponents';
-import { AlertTriangle, MapPin, Eye, FileText, Download } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Bell, CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronUp, Search, Filter, Download } from 'lucide-react';
+import { Card, SectionTitle, RiskBadge } from '../common/UIComponents';
+import { reportService } from '../../services/reportService';
+
+const SEV_ORDER = { CRITICAL:4, RED:3, ORANGE:2, YELLOW:1, GREEN:0 };
+const SEV_STYLE = {
+  CRITICAL: 'bg-red-900 text-white border-red-900',
+  RED:      'bg-red-100 text-red-900 border-red-300',
+  ORANGE:   'bg-orange-100 text-orange-800 border-orange-300',
+  YELLOW:   'bg-amber-100 text-amber-800 border-amber-300',
+  GREEN:    'bg-emerald-100 text-emerald-800 border-emerald-200',
+};
 
 export default function ReportsAlerts({ liveData, actions, setPage }) {
-  const [filterStatus, setFilterStatus] = useState("ALL");
-  const [filterSeverity, setFilterSeverity] = useState("ALL");
-  const [search, setSearch] = useState("");
+  const [filterStatus,   setFilterStatus]   = useState('OPEN');
+  const [filterSeverity, setFilterSeverity] = useState('');
+  const [search,         setSearch]         = useState('');
+  const [expanded,       setExpanded]       = useState(null);
+  const [note,           setNote]           = useState({});
+  const [saved,          setSaved]          = useState('');
 
-  const filteredAlerts = liveData.alerts.filter(a => {
-    if (filterStatus !== "ALL" && a.status !== filterStatus) return false;
-    if (filterSeverity !== "ALL" && a.severity !== filterSeverity) return false;
+  const alerts = useMemo(() => {
+    const db = liveData;
+    return (db.alerts || []).map(al => {
+      const animal = db.animals?.find(a => a.id === al.animalId) || {};
+      const farm   = db.farms?.find(f => f.id === animal.farmId) || {};
+      return { ...al, animal, farm };
+    }).sort((a,b) => (SEV_ORDER[b.severity]||0) - (SEV_ORDER[a.severity]||0) || new Date(b.createdAt) - new Date(a.createdAt));
+  }, [liveData]);
+
+  const filtered = alerts.filter(al => {
+    if (filterStatus && al.status !== filterStatus) return false;
+    if (filterSeverity && al.severity !== filterSeverity) return false;
     if (search) {
-      if (!a.id.toLowerCase().includes(search.toLowerCase()) && 
-          !a.animalId.toLowerCase().includes(search.toLowerCase())) {
-        return false;
-      }
+      const q = search.toLowerCase();
+      return al.animalId?.toLowerCase().includes(q) || al.farm?.name?.toLowerCase().includes(q) || al.farm?.district?.toLowerCase().includes(q);
     }
     return true;
   });
 
-  const handleAction = (alertId, actionType) => {
-    if (actions && actions.updateAlertStatus) {
-      if (actionType === "ACKNOWLEDGE") actions.updateAlertStatus(alertId, "ACKNOWLEDGED");
-      if (actionType === "RESOLVE") actions.updateAlertStatus(alertId, "RESOLVED");
-    }
-  };
+  const counts = useMemo(() => {
+    const c = { OPEN:0, ACKNOWLEDGED:0, RESOLVED:0, bySev:{} };
+    alerts.forEach(al => { c[al.status]=(c[al.status]||0)+1; c.bySev[al.severity]=(c.bySev[al.severity]||0)+1; });
+    return c;
+  }, [alerts]);
 
-  const generateReport = () => {
-    alert("Report generation preview:\n\n" +
-      "Maharashtra Livestock Situation Report\n" +
-      `Active Alerts: ${liveData.alerts.length}\n` +
-      `Potential Clusters: ${liveData.clusters?.length || 0}\n` +
-      `High Risk Animals: ${liveData.animals.filter(a => a.riskEval?.healthRiskLevel === "RED").length}\n\n` +
-      "(DEMO DATA)"
-    );
-  };
+  function flash(m) { setSaved(m); setTimeout(()=>setSaved(''), 2500); }
+  function ack(id)  { actions.updateAlertStatus(id,'ACKNOWLEDGED'); flash('Alert acknowledged.'); }
+  function resolve(id) { actions.updateAlertStatus(id,'RESOLVED', note[id]||''); flash('Alert resolved.'); }
+
+  function exportReport() {
+    const stats = reportService.getStateSummary();
+    const distStats = reportService.getDistrictStats();
+    reportService.exportCSV([stats], 'pashu_raksha_summary.csv');
+  }
+
+  const districtStats = useMemo(() => reportService.getDistrictStats(), [liveData]);
 
   return (
-    <div className="animate-in fade-in duration-300">
-      <SectionTitle eyebrow="District & State Control Room" title="Reports & Alerts">
-        <button onClick={generateReport} className="flex items-center gap-2 bg-teal-800 text-white px-4 py-2 rounded-lg font-bold hover:bg-teal-700">
-          <Download size={16} /> Generate Report
-        </button>
+    <div className="space-y-4">
+      <SectionTitle eyebrow="Surveillance & Notifications" title="Reports & Alerts">
+        <div className="flex gap-2">
+          {saved && <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">{saved}</span>}
+          <button onClick={exportReport} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Download size={14} /> Export
+          </button>
+        </div>
       </SectionTitle>
 
-      <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
-        <select 
-          value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}
-          className="p-2 border border-slate-200 rounded text-sm bg-slate-50"
-        >
-          <option value="ALL">All Severities</option>
-          <option value="CRITICAL">Critical Only</option>
-          <option value="RED">Red Only</option>
-          <option value="ORANGE">Orange Only</option>
-        </select>
-        
-        <select 
-          value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="p-2 border border-slate-200 rounded text-sm bg-slate-50"
-        >
-          <option value="ALL">All Statuses</option>
-          <option value="OPEN">Open</option>
-          <option value="ACKNOWLEDGED">Acknowledged</option>
-          <option value="RESOLVED">Resolved</option>
-        </select>
-        
-        <input 
-          type="text" placeholder="Search Alert ID or Animal ID..." 
-          value={search} onChange={e => setSearch(e.target.value)}
-          className="p-2 border border-slate-200 rounded text-sm bg-slate-50 flex-1 min-w-[200px]"
-        />
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {[
+          { label: 'Open', value: counts.OPEN,         bg: 'bg-red-50 border-red-200', text: 'text-red-800' },
+          { label: 'Acknowledged', value: counts.ACKNOWLEDGED||0, bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800' },
+          { label: 'Resolved', value: counts.RESOLVED||0,    bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800' },
+          { label: 'Critical', value: counts.bySev?.CRITICAL||0, bg: 'bg-red-900 border-red-900', text: 'text-white' },
+          { label: 'RED',      value: counts.bySev?.RED||0,      bg: 'bg-red-100 border-red-200',  text: 'text-red-900' },
+          { label: 'Orange',   value: counts.bySev?.ORANGE||0,   bg: 'bg-orange-50 border-orange-200', text: 'text-orange-800' },
+        ].map(s => (
+          <div key={s.label} className={`rounded-xl border p-3 text-center ${s.bg}`}>
+            <div className={`text-xl font-black ${s.text}`}>{s.value}</div>
+            <div className="text-xs font-semibold text-slate-500">{s.label}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="p-0 lg:col-span-2 overflow-hidden">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <tr>
-                <th className="px-4 py-3">Alert ID</th>
-                <th className="px-4 py-3">Time / Date</th>
-                <th className="px-4 py-3">Animal</th>
-                <th className="px-4 py-3">Risk</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
+      {/* District risk table */}
+      <Card className="p-0 overflow-x-auto">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">District Risk Overview</h3>
+          <button onClick={() => setPage('gis')} className="text-xs text-teal-700 font-semibold hover:underline">View Map →</button>
+        </div>
+        <table className="w-full text-sm text-left">
+          <thead className="text-xs uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="px-4 py-2">District</th><th className="px-4 py-2 text-right">Animals</th>
+              <th className="px-4 py-2 text-right">Farms</th><th className="px-4 py-2 text-right">Open Alerts</th>
+              <th className="px-4 py-2 text-right">High-Risk</th><th className="px-4 py-2 text-right">Active Cases</th>
+              <th className="px-4 py-2">Risk</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {districtStats.map(d => (
+              <tr key={d.district} className="hover:bg-slate-50">
+                <td className="px-4 py-3 font-bold text-slate-800">{d.district}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.animals}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.farms}</td>
+                <td className="px-4 py-3 text-right font-bold text-slate-700">{d.openAlerts}</td>
+                <td className="px-4 py-3 text-right font-bold text-red-700">{d.highRisk}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{d.activeCases}</td>
+                <td className="px-4 py-3"><RiskBadge level={d.riskLevel} /></td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredAlerts.length > 0 ? filteredAlerts.map(a => (
-                <tr key={a.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-bold text-slate-800">{a.id}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{new Date(a.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-700">{a.animalId}</td>
-                  <td className="px-4 py-3"><RiskBadge level={a.severity} /></td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      a.status === 'OPEN' ? 'bg-red-100 text-red-800' : 
-                      a.status === 'ACKNOWLEDGED' ? 'bg-amber-100 text-amber-800' : 
-                      'bg-slate-100 text-slate-600'
-                    }`}>{a.status}</span>
-                  </td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    {a.status === 'OPEN' && (
-                      <button onClick={() => handleAction(a.id, "ACKNOWLEDGE")} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold hover:bg-amber-200">Ack</button>
-                    )}
-                    {a.status !== 'RESOLVED' && (
-                      <button onClick={() => handleAction(a.id, "RESOLVE")} className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold hover:bg-emerald-200">Resolve</button>
-                    )}
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan="6" className="p-8 text-center text-slate-500">No verified records in selected filters.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </Card>
+            ))}
+          </tbody>
+        </table>
+      </Card>
 
-        <div className="space-y-4 lg:col-span-1">
-          <Card className="p-5">
-            <h3 className="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wide flex items-center gap-2">
-              <AlertTriangle size={16} className="text-amber-500" />
-              Latest Critical Alert Details
-            </h3>
-            {filteredAlerts.length > 0 ? (
-              <div className="space-y-4 text-sm">
-                <div className="font-bold text-slate-800 border-b pb-2">{filteredAlerts[0].id}</div>
-                <div><span className="text-slate-500">WHAT: </span> Health abnormality detected via algorithm</div>
-                <div><span className="text-slate-500">WHERE: </span> {liveData.farms.find(f => f.id === liveData.animals.find(an => an.id === filteredAlerts[0].animalId)?.farmId)?.district || "Unknown District"}</div>
-                <div><span className="text-slate-500">WHEN: </span> {new Date(filteredAlerts[0].createdAt).toLocaleString()}</div>
-                <div><span className="text-slate-500">WHO: </span> Animal {filteredAlerts[0].animalId}</div>
-                <div><span className="text-slate-500">RISK: </span> {filteredAlerts[0].severity}</div>
-                <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                  <button onClick={() => setPage("gis")} className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded flex justify-center items-center gap-2"><MapPin size={16} /> View GIS</button>
-                  <button onClick={() => setPage("cases")} className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded flex justify-center items-center gap-2"><FileText size={16} /> View Case</button>
+      {/* Alert filters */}
+      <div className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input className="pl-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-600 focus:outline-none" placeholder="Search by animal ID, farm, district…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <option value="">All Statuses</option><option>OPEN</option><option>ACKNOWLEDGED</option><option>RESOLVED</option>
+        </select>
+        <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
+          <option value="">All Severities</option><option>CRITICAL</option><option>RED</option><option>ORANGE</option><option>YELLOW</option>
+        </select>
+      </div>
+
+      {/* Alert list */}
+      <div className="space-y-2">
+        {filtered.length === 0 && (
+          <div className="py-10 text-center text-slate-400"><Bell size={32} className="mx-auto mb-2" /><p>No alerts match your filters.</p></div>
+        )}
+        {filtered.map(al => (
+          <Card key={al.id} className={`border-l-4 ${al.severity === 'CRITICAL' ? 'border-red-900' : al.severity === 'RED' ? 'border-red-600' : al.severity === 'ORANGE' ? 'border-orange-500' : 'border-amber-400'}`}>
+            <div className="p-4">
+              <div className="flex flex-wrap justify-between gap-2 items-start">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${SEV_STYLE[al.severity]}`}>{al.severity}</span>
+                    <span className="font-bold text-slate-900">{al.animalId}</span>
+                    <span className="text-sm text-slate-500">{al.farm?.name} · {al.farm?.district}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${al.status === 'OPEN' ? 'bg-red-100 text-red-800' : al.status === 'ACKNOWLEDGED' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{al.status}</span>
+                  </div>
+                  <p className="text-sm text-slate-700 mt-1 leading-relaxed">{al.message}</p>
+                  <div className="text-xs text-slate-400 mt-1">{al.id} · {new Date(al.createdAt).toLocaleString('en-IN')}</div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  {al.status === 'OPEN' && (
+                    <button onClick={() => ack(al.id)} className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded hover:bg-amber-100">
+                      <CheckCircle2 size={12} /> Acknowledge
+                    </button>
+                  )}
+                  {al.status !== 'RESOLVED' && (
+                    <button onClick={() => setExpanded(expanded === al.id ? null : al.id)} className="flex items-center gap-1 text-xs font-semibold text-slate-600 border border-slate-200 px-2 py-1 rounded hover:bg-slate-50">
+                      Resolve {expanded === al.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  )}
+                  <button onClick={() => { setPage('animal-profile', al.animalId); }} className="text-xs font-semibold text-teal-700 border border-teal-200 px-2 py-1 rounded hover:bg-teal-50">View Animal</button>
                 </div>
               </div>
-            ) : (
-              <div className="text-slate-500 text-sm text-center py-8">Select an alert to view detailed geographic and epidemiological context.</div>
-            )}
+              {expanded === al.id && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" rows={2} placeholder="Resolution note…" value={note[al.id]||''} onChange={e => setNote(n => ({ ...n, [al.id]: e.target.value }))} />
+                  <button onClick={() => { resolve(al.id); setExpanded(null); }} className="mt-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600">
+                    <XCircle size={14} className="inline mr-1.5" />Mark Resolved
+                  </button>
+                </div>
+              )}
+            </div>
           </Card>
-        </div>
+        ))}
       </div>
     </div>
   );

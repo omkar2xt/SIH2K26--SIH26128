@@ -15,6 +15,25 @@ PASHU-RAKSHA is an explainable, rule-based decision-support platform designed fo
 - **GIS Surveillance**: A robust, interactive geographic information system (Leaflet + GeoJSON) to track disease spread and clusters at the district level.
 - **Live Simulation**: A built-in simulation engine that artificially accelerates time to demonstrate outbreak detection, alert escalation, and containment protocols in a presentation setting.
 
+## System Architecture
+
+PASHU-RAKSHA operates on a robust, scalable architecture tailored for high performance and explainability in livestock health monitoring.
+
+1. **Client Layer (User Interface)**
+   - **Framework:** React.js powered by Vite for fast, modular rendering.
+   - **Styling:** Tailwind CSS for a responsive, accessible, and dynamic UI.
+   - **Data Visualization:** Recharts for analytical dashboards and React Leaflet for interactive GIS surveillance mapping.
+   - **User Portals:** Distinct, role-based dashboards for Farmers, Veterinarians, Field Workers, Government Officials, and Admins.
+
+2. **Application & Processing Layer**
+   - **State Management:** React state/context to maintain live simulated events and user sessions.
+   - **Rule Engine (Explainable AI):** Evaluates incoming behavioral data (Activity, Feeding, Movement) against the official Maharashtra Livestock Knowledge Base to generate reasoned alerts.
+   - **Simulation Engine:** Built-in module to artificially accelerate time and generate mock telemetry for outbreak detection demonstrations.
+
+3. **Data Layer**
+   - **Health Fingerprinting Data:** Manages individual animal baselines for anomaly detection.
+   - **Geospatial Data:** Integrates official Maharashtra GeoJSON formats with OpenStreetMap tiles for district-level tracking.
+
 ## Tech Stack
 - **Frontend**: React, Vite, Tailwind CSS
 - **Mapping**: React Leaflet, OpenStreetMap, official Maharashtra GeoJSON
