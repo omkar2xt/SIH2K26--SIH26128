@@ -1,0 +1,18 @@
+{
+  "auditTimestamp": "2026-09-17T01:19:47.505Z",
+  "status": "PASSED",
+  "counts": {
+    "speciesCount": 16,
+    "breedsCount": 20,
+    "diseasesCount": 16,
+    "diseaseSpeciesAssociationsCount": 33
+  },
+  "qualityChecks": {
+    "duplicateSpecies": false,
+    "orphanBreedsCount": 0,
+    "diseasesWithMissingEvidence": 0,
+    "invalidDiseaseSpeciesAssociations": 0,
+    "unsupportedClaimsCount": 0
+  },
+  "verificationSummary": "All 16 species, 20 breeds, 16 diseases, and 33 associations verified against Maharashtra Knowledge Base v1.0."
+}

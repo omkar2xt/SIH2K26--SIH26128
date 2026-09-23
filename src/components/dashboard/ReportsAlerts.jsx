@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Bell, CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronUp, Search, Filter, Download } from 'lucide-react';
 import { Card, SectionTitle, RiskBadge } from '../common/UIComponents';
 import { reportService } from '../../services/reportService';
+import { api } from '../../services/api/api';
+import { useEffect } from 'react';
 
 const SEV_ORDER = { CRITICAL:4, RED:3, ORANGE:2, YELLOW:1, GREEN:0 };
 const SEV_STYLE = {
@@ -20,21 +22,32 @@ export default function ReportsAlerts({ liveData, actions, setPage }) {
   const [note,           setNote]           = useState({});
   const [saved,          setSaved]          = useState('');
 
-  const alerts = useMemo(() => {
-    const db = liveData;
-    return (db.alerts || []).map(al => {
-      const animal = db.animals?.find(a => a.id === al.animalId) || {};
-      const farm   = db.farms?.find(f => f.id === animal.farmId) || {};
-      return { ...al, animal, farm };
-    }).sort((a,b) => (SEV_ORDER[b.severity]||0) - (SEV_ORDER[a.severity]||0) || new Date(b.createdAt) - new Date(a.createdAt));
-  }, [liveData]);
+  const [alerts, setAlerts] = useState([]);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchAlerts() {
+      try {
+        const data = await api.alerts.getAll();
+        setAlerts(data);
+      } catch (err) {
+        console.error('Failed to fetch alerts:', err);
+        setError('Failed to connect to backend for authoritative alerts.');
+        setAlerts([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchAlerts();
+  }, []);
 
   const filtered = alerts.filter(al => {
     if (filterStatus && al.status !== filterStatus) return false;
     if (filterSeverity && al.severity !== filterSeverity) return false;
     if (search) {
       const q = search.toLowerCase();
-      return al.animalId?.toLowerCase().includes(q) || al.farm?.name?.toLowerCase().includes(q) || al.farm?.district?.toLowerCase().includes(q);
+      return al.animalTag?.toLowerCase().includes(q) || al.farmName?.toLowerCase().includes(q) || al.district?.toLowerCase().includes(q);
     }
     return true;
   });
@@ -46,8 +59,17 @@ export default function ReportsAlerts({ liveData, actions, setPage }) {
   }, [alerts]);
 
   function flash(m) { setSaved(m); setTimeout(()=>setSaved(''), 2500); }
-  function ack(id)  { actions.updateAlertStatus(id,'ACKNOWLEDGED'); flash('Alert acknowledged.'); }
-  function resolve(id) { actions.updateAlertStatus(id,'RESOLVED', note[id]||''); flash('Alert resolved.'); }
+  async function ack(id) { 
+    try {
+      await api.alerts.acknowledge(id);
+      setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: 'ACKNOWLEDGED' } : a));
+      flash('Alert acknowledged.'); 
+    } catch (err) {
+      alert('Failed to acknowledge alert: ' + err.message);
+    }
+  }
+  // resolve is currently not implemented in backend, keeping stub
+  function resolve(id) { alert('Resolving alerts requires additional backend endpoint (Not implemented in 2G)'); }
 
   function exportReport() {
     const stats = reportService.getStateSummary();
@@ -67,6 +89,14 @@ export default function ReportsAlerts({ liveData, actions, setPage }) {
           </button>
         </div>
       </SectionTitle>
+
+      {error && (
+        <div className="bg-red-50 text-red-700 p-4 rounded-lg font-bold">
+          {error}
+        </div>
+      )}
+
+      {loading && <div className="text-center py-4">Loading authoritative alerts...</div>}
 
       {/* Summary stats */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -142,8 +172,8 @@ export default function ReportsAlerts({ liveData, actions, setPage }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${SEV_STYLE[al.severity]}`}>{al.severity}</span>
-                    <span className="font-bold text-slate-900">{al.animalId}</span>
-                    <span className="text-sm text-slate-500">{al.farm?.name} · {al.farm?.district}</span>
+                    <span className="font-bold text-slate-900">{al.animalTag}</span>
+                    <span className="text-sm text-slate-500">{al.farmName} · {al.district}</span>
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${al.status === 'OPEN' ? 'bg-red-100 text-red-800' : al.status === 'ACKNOWLEDGED' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{al.status}</span>
                   </div>
                   <p className="text-sm text-slate-700 mt-1 leading-relaxed">{al.message}</p>
@@ -160,7 +190,7 @@ export default function ReportsAlerts({ liveData, actions, setPage }) {
                       Resolve {expanded === al.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
                   )}
-                  <button onClick={() => { setPage('animal-profile', al.animalId); }} className="text-xs font-semibold text-teal-700 border border-teal-200 px-2 py-1 rounded hover:bg-teal-50">View Animal</button>
+                  <button onClick={() => { setPage('animal-profile', al.animalTag); }} className="text-xs font-semibold text-teal-700 border border-teal-200 px-2 py-1 rounded hover:bg-teal-50">View Animal</button>
                 </div>
               </div>
               {expanded === al.id && (

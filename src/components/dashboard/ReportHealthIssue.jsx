@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Send, PawPrint, ChevronDown, Camera, Cpu } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Send, PawPrint, ChevronDown, Camera, Cpu, Activity } from 'lucide-react';
 import { Card, SectionTitle } from '../common/UIComponents';
+import { api } from '../../services/api/api';
 
 const SYMPTOMS = [
   'Not eating / low appetite', 'Limping / difficulty walking', 'Swollen body part',
@@ -11,18 +12,32 @@ const SYMPTOMS = [
 
 const inputCls = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100";
 
-export default function ReportHealthIssue({ liveData, actions, offlineMode, role }) {
+export default function ReportHealthIssue({ offlineMode, role }) {
   const [form, setForm] = useState({
     animalId: '', symptoms: [], notes: '', severity: 'Mild',
     hasCamera: false, hasIoT: false,
   });
   const [submitted, setSubmitted] = useState(false);
   const [submittedObs, setSubmittedObs] = useState(null);
+  const [animals, setAnimals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const myFarmId = role === 'farmer' ? (liveData.users?.find(u => u.role === 'farmer')?.farmId || null) : null;
-  const myAnimals = myFarmId
-    ? (liveData.animals || []).filter(a => a.farmId === myFarmId)
-    : (liveData.animals || []);
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      setError(null);
+      const res = await api.animals.getAll();
+      if (res.success) {
+        setAnimals(res.data);
+      } else {
+        setError(res.error || 'Failed to load animals');
+      }
+      setLoading(false);
+    }
+    loadData();
+  }, []);
 
   function toggleSymptom(s) {
     setForm(f => ({
@@ -31,21 +46,55 @@ export default function ReportHealthIssue({ liveData, actions, offlineMode, role
     }));
   }
 
-  function submit() {
+  async function submit() {
     if (!form.animalId) return;
+    setSubmitting(true);
+    
+    // Convert symptoms + notes into a single notes field for the backend, since backend observation model might not have symptoms array natively
+    const fullNotes = `Symptoms: ${form.symptoms.join(', ')}\nNotes: ${form.notes}`;
+    
     const obs = {
       animalId: form.animalId,
-      symptoms: form.symptoms,
-      notes: form.notes,
+      notes: fullNotes,
       severity: form.severity,
+      // Metadata
       cameraSource: form.hasCamera,
       iotSource: form.hasIoT,
-      reportedBy: 'Current User',
-      reporterRole: role || 'farmer',
     };
-    actions.addReport(obs);
-    setSubmittedObs(obs);
-    setSubmitted(true);
+    
+    const res = await api.observations.create(obs);
+    setSubmitting(false);
+    
+    if (res.success) {
+      setSubmittedObs({ animalId: form.animalId });
+      setSubmitted(true);
+    } else {
+      alert(`Submission failed: ${res.error}`);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <SectionTitle eyebrow="Farmer Portal" title="Report a Health Issue" />
+        <Card className="p-12 text-center text-slate-500 flex flex-col items-center">
+          <Activity className="animate-spin mb-4 text-teal-600" size={32} />
+          <p className="font-semibold text-sm">Loading authoritative data...</p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <SectionTitle eyebrow="Farmer Portal" title="Report a Health Issue" />
+        <Card className="p-8 text-center bg-red-50 border-red-200">
+          <h3 className="text-red-800 font-bold mb-2">Backend Connection Failed</h3>
+          <p className="text-red-600 text-sm">{error}</p>
+        </Card>
+      </div>
+    );
   }
 
   if (submitted) {
@@ -54,14 +103,9 @@ export default function ReportHealthIssue({ liveData, actions, offlineMode, role
         <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-400 flex items-center justify-center mx-auto mb-4">
           <span className="text-3xl">✓</span>
         </div>
-        <h2 className="text-xl font-bold text-slate-900 mb-2">Report Submitted</h2>
-        <p className="text-slate-600 mb-2">Your report for <strong>{submittedObs?.animalId}</strong> has been {offlineMode ? 'queued for sync (offline mode)' : 'saved'}.</p>
-        {offlineMode && (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800 mb-4">
-            📡 Offline mode — this report will sync when connectivity is restored.
-          </div>
-        )}
-        <div className="text-sm text-slate-500 mb-4">A veterinarian will be notified if a risk threshold is crossed.</div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Report Submitted to Backend</h2>
+        <p className="text-slate-600 mb-2">Your report for <strong>{submittedObs?.animalId}</strong> has been saved.</p>
+        <div className="text-sm text-slate-500 mb-4">The authoritative brain will re-calculate risk and notify a veterinarian if a threshold is crossed.</div>
         <button onClick={() => { setSubmitted(false); setForm({ animalId:'', symptoms:[], notes:'', severity:'Mild', hasCamera:false, hasIoT:false }); }}
           className="rounded-lg bg-teal-700 px-6 py-2 text-sm font-semibold text-white hover:bg-teal-600">
           Report Another Issue
@@ -76,7 +120,7 @@ export default function ReportHealthIssue({ liveData, actions, offlineMode, role
 
       {offlineMode && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800">
-          📡 Offline mode — reports will be queued and synced when connectivity is restored.
+          📡 Offline mode — API connectivity is required.
         </div>
       )}
 
@@ -86,10 +130,10 @@ export default function ReportHealthIssue({ liveData, actions, offlineMode, role
           <span className="text-sm font-bold text-slate-700 block mb-1">1. Which animal? <span className="text-red-500">*</span></span>
           <select className={inputCls} value={form.animalId} onChange={e => setForm(f => ({ ...f, animalId: e.target.value }))}>
             <option value="">— Select your animal —</option>
-            {myAnimals.map(a => {
-              const species = (liveData.species || []).find(s => s.id === a.speciesId);
-              const farm    = (liveData.farms || []).find(f => f.id === a.farmId);
-              return <option key={a.id} value={a.id}>{a.name || a.id} ({species?.name} · {farm?.name})</option>;
+            {animals.map(a => {
+              const farmName = a.farm?.name || a.farmId;
+              const speciesName = a.species?.name || 'Unknown Species';
+              return <option key={a.id} value={a.id}>{a.tagId || a.id} ({speciesName} · {farmName})</option>;
             })}
           </select>
         </label>
@@ -141,8 +185,9 @@ export default function ReportHealthIssue({ liveData, actions, offlineMode, role
           </div>
         </div>
 
-        <button onClick={submit} disabled={!form.animalId} className="w-full flex items-center justify-center gap-2 rounded-lg bg-teal-700 px-4 py-3 text-sm font-bold text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed">
-          <Send size={16} /> Submit Report
+        <button onClick={submit} disabled={!form.animalId || submitting} className="w-full flex items-center justify-center gap-2 rounded-lg bg-teal-700 px-4 py-3 text-sm font-bold text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+          {submitting ? <Activity className="animate-spin" size={16} /> : <Send size={16} />} 
+          {submitting ? 'Submitting to Brain...' : 'Submit Report via API'}
         </button>
       </Card>
     </div>

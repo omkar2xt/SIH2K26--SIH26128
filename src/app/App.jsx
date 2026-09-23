@@ -47,8 +47,35 @@ export default function App() {
   }, []);
 
   if (!role) {
-    return <Landing onSelectRole={(r) => { 
+    return <Landing onSelectRole={async (r) => { 
       const NAME_MAP = { farmer: "R. Deshmukh", vet: "Dr. A. Kulkarni", official: "D. Officer", field: "F. Worker", admin: "Admin" };
+      
+      // Step 2E: Backend Authentication Integration
+      let username = null;
+      if (r === 'admin') username = 'admin';
+      if (r === 'vet') username = 'dr_kulkarni';
+      if (r === 'farmer') username = 'test_farmer_a'; // we can use one of the test farmers, or farmer_a
+      // fallback for demo
+      if (!username) username = 'admin'; 
+
+      try {
+        const { api } = await import('../services/api/api.js');
+        const res = await api.auth.login(username, 'Dev@1234');
+        if (res.success) {
+          localStorage.setItem('pashuraksha_token', res.data.token);
+          console.log('Successfully authenticated with backend as', username);
+          // Set role based on backend identity
+          // map backend role to frontend nav role
+          const backendRole = res.data.user.role.name;
+          const roleMap = { 'ADMIN': 'admin', 'VETERINARIAN': 'vet', 'FARMER': 'farmer', 'FIELD_WORKER': 'field', 'STATE_OFFICIAL': 'official', 'DISTRICT_OFFICIAL': 'official' };
+          r = roleMap[backendRole] || r;
+        } else {
+          console.error('Backend auth failed:', res.error);
+        }
+      } catch (e) {
+        console.error('Backend connection failed:', e);
+      }
+
       setRole(r); 
       setUserName(NAME_MAP[r] || "User");
       setPage('dashboard'); 

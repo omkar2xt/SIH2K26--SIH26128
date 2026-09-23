@@ -1,0 +1,114 @@
+[
+  {
+    "id": "DIS_01",
+    "name": "Foot and Mouth Disease",
+    "shortName": "FMD",
+    "zoonotic": false,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_02",
+    "name": "Hemorrhagic Septicemia",
+    "shortName": "HS",
+    "zoonotic": false,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_03",
+    "name": "Lumpy Skin Disease",
+    "shortName": "LSD",
+    "zoonotic": false,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_04",
+    "name": "Brucellosis",
+    "shortName": "BRU",
+    "zoonotic": true,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_05",
+    "name": "Leptospirosis",
+    "shortName": "LEP",
+    "zoonotic": true,
+    "notifiable": false
+  },
+  {
+    "id": "DIS_06",
+    "name": "Peste des Petits Ruminants",
+    "shortName": "PPR",
+    "zoonotic": false,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_07",
+    "name": "Glanders",
+    "shortName": "GLA",
+    "zoonotic": true,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_08",
+    "name": "African Swine Fever",
+    "shortName": "ASF",
+    "zoonotic": false,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_09",
+    "name": "Anthrax",
+    "shortName": "ANT",
+    "zoonotic": true,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_10",
+    "name": "Black Quarter",
+    "shortName": "BQ",
+    "zoonotic": false,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_11",
+    "name": "Rabies",
+    "shortName": "RAB",
+    "zoonotic": true,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_12",
+    "name": "Avian Influenza",
+    "shortName": "AI",
+    "zoonotic": true,
+    "notifiable": true
+  },
+  {
+    "id": "DIS_13",
+    "name": "Surra (Trypanosomiasis)",
+    "shortName": "SUR",
+    "zoonotic": false,
+    "notifiable": false
+  },
+  {
+    "id": "DIS_14",
+    "name": "Theileriosis",
+    "shortName": "THE",
+    "zoonotic": false,
+    "notifiable": false
+  },
+  {
+    "id": "DIS_15",
+    "name": "Enterotoxemia",
+    "shortName": "ET",
+    "zoonotic": false,
+    "notifiable": false
+  },
+  {
+    "id": "DIS_16",
+    "name": "Bovine Mastitis",
+    "shortName": "MAS",
+    "zoonotic": false,
+    "notifiable": false
+  }
+]

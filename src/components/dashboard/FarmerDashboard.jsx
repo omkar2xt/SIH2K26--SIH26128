@@ -1,28 +1,81 @@
-import React from 'react';
-import { PawPrint, CheckCircle2, Eye, AlertTriangle, ShieldAlert, Syringe, Bell, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { PawPrint, CheckCircle2, Eye, AlertTriangle, ShieldAlert, Syringe, Bell, ChevronRight, Activity } from 'lucide-react';
 import { SectionTitle, StatCard, Card, RiskBadge } from '../common/UIComponents';
+import { api } from '../../services/api/api';
 
 export default function FarmerDashboard({ liveData, fieldMode, setPage, role, actions }) {
-  const total   = liveData.animals.length;
-  const healthy = liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'GREEN').length;
-  const monitor = liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'YELLOW').length;
-  const highRisk= liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'ORANGE' || a.riskEval?.healthRiskLevel === 'RED').length;
-  const critical= liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'CRITICAL').length;
+  const [animals, setAnimals] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // My farm animals (first farm in list; in real system would use session farmId)
-  const myFarm    = (liveData.farms || [])[0];
-  const myAnimals = myFarm
-    ? liveData.animals.filter(a => a.farmId === myFarm.id)
-    : liveData.animals.slice(0, 6);
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [animRes, alertRes] = await Promise.all([
+          api.animals.getAll(),
+          api.alerts.getAll()
+        ]);
+        if (animRes.success) {
+          setAnimals(animRes.data);
+        } else {
+          setError(animRes.error || 'Failed to load animals from backend');
+        }
+        
+        if (alertRes && Array.isArray(alertRes)) {
+          setAlerts(alertRes);
+        } else {
+          setAlerts([]);
+        }
+      } catch (err) {
+        setError('Failed to connect to authoritative backend');
+      }
+      setLoading(false);
+    }
+    loadData();
+  }, []);
 
-  const alertAnimals = liveData.animals
-    .filter(a => a.riskEval?.healthRiskLevel !== 'GREEN')
-    .sort((a,b) => (b.riskEval?.score||0) - (a.riskEval?.score||0))
+  if (loading) {
+    return (
+      <div className="animate-in fade-in flex flex-col items-center justify-center p-20 text-slate-400">
+        <Activity className="animate-spin mb-4 text-teal-600" size={32} />
+        <p className="font-semibold text-sm">Connecting to authoritative backend...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="animate-in fade-in p-10 mt-10 max-w-lg mx-auto bg-red-50 border border-red-200 rounded-xl text-center">
+        <div className="mx-auto w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+          <Activity size={24} />
+        </div>
+        <h3 className="text-red-800 font-bold mb-2">Backend Connection Failed</h3>
+        <p className="text-red-600 text-sm">{error}</p>
+        <p className="text-xs text-red-500 mt-4 font-semibold uppercase tracking-wide">Network Error — Fallback Disabled</p>
+      </div>
+    );
+  }
+
+  const total   = animals.length;
+  const healthy = animals.filter(a => a.riskLevel === 'GREEN').length;
+  const monitor = animals.filter(a => a.riskLevel === 'YELLOW').length;
+  const highRisk= animals.filter(a => a.riskLevel === 'ORANGE' || a.riskLevel === 'RED').length;
+  const critical= animals.filter(a => a.riskLevel === 'CRITICAL').length;
+
+  // The backend already scopes animals to the user's farm
+  const myAnimals = animals;
+
+  const alertAnimals = animals
+    .filter(a => a.riskLevel !== 'GREEN')
+    // We do not have riskEval score directly, so we just slice
     .slice(0, 4);
 
-  const openAlerts = (liveData.alerts || []).filter(a => a.status === 'OPEN').length;
+  // Backend provides real alerts
+  const openAlerts = alerts.filter(a => a.status === 'OPEN').length;
 
-  // Overdue vaccinations for my farm
   const today = new Date().toISOString().split('T')[0];
   const overdueVacs = (liveData.vaccinations || [])
     .filter(v => v.nextDue && v.nextDue < today && myAnimals.some(a => a.id === v.animalId));
@@ -49,19 +102,18 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
           </div>
           <div className="space-y-2">
             {alertAnimals.length > 0 ? alertAnimals.map(a => {
-              const farm = (liveData.farms || []).find(f => f.id === a.farmId);
-              const species = (liveData.species || []).find(s => s.id === a.speciesId);
+              const farmName = a.farm?.name || '';
               return (
                 <button key={a.id} onClick={() => setPage?.('animal-profile', a.id)}
                   className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 bg-white hover:bg-teal-50 transition-colors text-left">
                   <div>
-                    <div className="text-sm font-bold text-slate-800">{a.name || a.id}
-                      <span className="ml-2 text-xs font-normal text-slate-400">· {farm?.name}</span>
+                    <div className="text-sm font-bold text-slate-800">{a.tagId || a.id}
+                      <span className="ml-2 text-xs font-normal text-slate-400">· {farmName}</span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-0.5">{a.riskEval?.reasons?.[0]?.text || 'Baseline deviation detected'}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Health anomaly detected by backend</div>
                   </div>
                   <div className="ml-2 shrink-0">
-                    <RiskBadge level={a.riskEval?.healthRiskLevel || 'GREEN'} />
+                    <RiskBadge level={a.riskLevel || 'GREEN'} />
                   </div>
                 </button>
               );
@@ -124,24 +176,18 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="px-4 py-3">Animal</th><th className="px-4 py-3">Species · Breed</th>
-                <th className="px-4 py-3">Activity</th><th className="px-4 py-3">Health</th>
+                <th className="px-4 py-3">Health</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {myAnimals.map(a => {
-                const species = (liveData.species||[]).find(s => s.id === a.speciesId);
-                const breed   = (liveData.breeds||[]).find(b => b.id === a.breedId);
-                const actDrop = a.baseline?.activity > 0 ? Math.round(((a.baseline.activity - a.current.activity) / a.baseline.activity) * 100) : 0;
+                const speciesName = a.species?.name || 'Unknown Species';
+                const breedName = a.breed?.name || 'Unknown Breed';
                 return (
                   <tr key={a.id} onClick={() => setPage?.('animal-profile', a.id)} className="hover:bg-teal-50 cursor-pointer">
-                    <td className="px-4 py-3"><div className="font-bold text-teal-800 text-xs">{a.id}</div><div>{a.name || '—'}</div></td>
-                    <td className="px-4 py-3 text-slate-600">{species?.name} · <span className="text-slate-400">{breed?.name}</span></td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-bold ${actDrop >= 25 ? 'text-red-600' : actDrop >= 10 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                        {a.current?.activity}% {actDrop > 0 && <span className="text-[10px]">▼{actDrop}%</span>}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3"><RiskBadge level={a.riskEval?.healthRiskLevel || 'GREEN'} /></td>
+                    <td className="px-4 py-3"><div className="font-bold text-teal-800 text-xs">{a.tagId || a.id}</div></td>
+                    <td className="px-4 py-3 text-slate-600">{speciesName} · <span className="text-slate-400">{breedName}</span></td>
+                    <td className="px-4 py-3"><RiskBadge level={a.riskLevel || 'GREEN'} /></td>
                   </tr>
                 );
               })}

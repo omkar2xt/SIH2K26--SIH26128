@@ -1,3 +1,6 @@
+// PASHU-RAKSHA Production Prisma Schema
+// Provider: sqlite for local dev, postgresql for production
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,26 +10,1332 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
+// ----------------------------------------------------
+// 1. GEOGRAPHY & MASTER LOCATION DATA
+// ----------------------------------------------------
+
+model Country {
   id        String   @id @default(uuid())
-  username  String   @unique
-  role      String
+  code      String   @unique
+  name      String
+  regions   Region[]
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Region {
+  id        String     @id @default(uuid())
+  countryId String
+  country   Country    @relation(fields: [countryId], references: [id])
+  code      String
+  name      String
+  districts District[]
+  createdAt DateTime   @default(now())
+
+  @@unique([countryId, code])
+}
+
+model District {
+  id           String        @id @default(uuid())
+  regionId     String
+  region       Region        @relation(fields: [regionId], references: [id])
+  name         String
+  code         String        @unique
+  subDistricts SubDistrict[]
+  farms        Farm[]
+  clusters     Cluster[]
+  createdAt    DateTime      @default(now())
+}
+
+model SubDistrict {
+  id         String    @id @default(uuid())
+  districtId String
+  district   District  @relation(fields: [districtId], references: [id])
+  name       String
+  villages   Village[]
+  createdAt  DateTime  @default(now())
+}
+
+model Village {
+  id            String      @id @default(uuid())
+  subDistrictId String
+  subDistrict   SubDistrict @relation(fields: [subDistrictId], references: [id])
+  name          String
+  code          String?
+  farms         Farm[]
+  createdAt     DateTime    @default(now())
+}
+
+model GeographicBoundary {
+  id           String   @id @default(uuid())
+  entityType   String   // COUNTRY, REGION, DISTRICT, SUBDISTRICT, VILLAGE
+  entityId     String
+  geometryJson String   // GeoJSON Polygon/MultiPolygon
+  createdAt    DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// 2. KNOWLEDGE BASE & TAXONOMY MASTER DATA
+// ----------------------------------------------------
+
+model Taxonomy {
+  id        String    @id @default(uuid())
+  kingdom   String    @default("Animalia")
+  phylum    String
+  class     String
+  order     String
+  family    String
+  genus     String
+  species   Species[]
+  createdAt DateTime  @default(now())
+}
+
+model Species {
+  id           String                      @id @default(uuid())
+  code         String                      @unique // SP_01, SP_02, etc.
+  name         String                      @unique // Cattle, Buffalo, etc.
+  speciesGroup String                      // Bovine, Caprine, Ovine, Porcine, Equine, etc.
+  scientificName String?
+  taxonomyId   String?
+  taxonomy     Taxonomy?                   @relation(fields: [taxonomyId], references: [id])
+  maharashtraRelevance String             @default("High")
+  aliases      SpeciesAlias[]
+  localizations SpeciesLocalization[]
+  breeds       Breed[]
+  diseases     DiseaseSpeciesAssociation[]
+  animals      Animal[]
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+}
+
+model SpeciesAlias {
+  id        String   @id @default(uuid())
+  speciesId String
+  species   Species  @relation(fields: [speciesId], references: [id])
+  aliasName String
+  createdAt DateTime @default(now())
+}
+
+model SpeciesLocalization {
+  id           String   @id @default(uuid())
+  speciesId    String
+  species      Species  @relation(fields: [speciesId], references: [id])
+  languageCode String
+  localizedName String
+  createdAt    DateTime @default(now())
+}
+
+model Breed {
+  id          String                    @id @default(uuid())
+  speciesId   String
+  species     Species                   @relation(fields: [speciesId], references: [id])
+  name        String                    // Gir, Sahiwal, Osmanabadi, etc.
+  originRegion String?
+  traitSummary String?
+  aliases     BreedAlias[]
+  localizations BreedLocalization[]
+  regions     BreedRegion[]
+  traits      BreedTrait[]
+  diseaseRels BreedDiseaseRelationship[]
+  animals     Animal[]
+  createdAt   DateTime                  @default(now())
+}
+
+model BreedAlias {
+  id        String   @id @default(uuid())
+  breedId   String
+  breed     Breed    @relation(fields: [breedId], references: [id])
+  aliasName String
+  createdAt DateTime @default(now())
+}
+
+model BreedLocalization {
+  id           String   @id @default(uuid())
+  breedId      String
+  breed        Breed    @relation(fields: [breedId], references: [id])
+  languageCode String
+  localizedName String
+  createdAt    DateTime @default(now())
+}
+
+model BreedRegion {
+  id         String   @id @default(uuid())
+  breedId    String
+  breed      Breed    @relation(fields: [breedId], references: [id])
+  regionName String
+  createdAt  DateTime @default(now())
+}
+
+model BreedTrait {
+  id         String   @id @default(uuid())
+  breedId    String
+  breed      Breed    @relation(fields: [breedId], references: [id])
+  traitName  String
+  traitValue String
+  createdAt  DateTime @default(now())
+}
+
+model DiseaseCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique // Viral, Bacterial, Protozoal, Parasitic, Fungal
+  description String?
+  diseases    Disease[]
+  createdAt   DateTime  @default(now())
+}
+
+model DiseaseClassification {
+  id          String    @id @default(uuid())
+  name        String    @unique // Transboundary, Zoonotic, Vector-borne, Production
+  diseases    Disease[]
+  createdAt   DateTime  @default(now())
+}
+
+model Disease {
+  id                     String                      @id @default(uuid())
+  code                   String                      @unique // DIS_01, DIS_02, etc.
+  name                   String                      @unique // Foot and Mouth Disease, etc.
+  shortName              String?
+  categoryId             String?
+  category               DiseaseCategory?            @relation(fields: [categoryId], references: [id])
+  classificationId       String?
+  classification         DiseaseClassification?     @relation(fields: [classificationId], references: [id])
+  causativeAgent         String?
+  isInfectious           Boolean                     @default(true)
+  isZoonotic             Boolean                     @default(false)
+  isVectorBorne          Boolean                     @default(false)
+  isTransboundary        Boolean                     @default(false)
+  isEmerging             Boolean                     @default(false)
+  isNotifiable           Boolean                     @default(false)
+  isReportable           Boolean                     @default(false)
+  earlySymptoms          String?
+  behavioralSigns        String?
+  physicalSigns          String?
+  transmissionSummary    String?
+  riskFactorsSummary     String?
+  cameraSignals          String?
+  iotSignals             String?
+  diagnosticsSummary     String?
+  vaccinationSummary     String?
+  preventionSummary      String?
+  containmentSummary     String?
+  maharashtraRelevance   String?
+  evidenceStatus         String                      @default("Established")
+  aliases                DiseaseAlias[]
+  pathogens              DiseasePathogen[]
+  clinicalSigns          DiseaseClinicalSign[]
+  behaviouralSignals     DiseaseBehaviouralSignal[]
+  riskFactors            DiseaseRiskFactor[]
+  transmissions          DiseaseTransmission[]
+  vectors                DiseaseVector[]
+  diagnostics            DiseaseDiagnosticMethod[]
+  sampleRequirements     DiseaseSampleRequirement[]
+  preventions            DiseasePrevention[]
+  seasonalities          DiseaseSeasonality[]
+  environmentRels        DiseaseEnvironmentRelationship[]
+  diseaseRegions         DiseaseRegion[]
+  speciesAssocs          DiseaseSpeciesAssociation[]
+  breedAssocs            BreedDiseaseRelationship[]
+  knowledgeRules         DiseaseKnowledgeRule[]
+  healthEvents           HealthEvent[]
+  cases                  Case[]
+  labOrders              LabOrder[]
+  exposureEvents         ExposureEvent[]
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+}
+
+model DiseaseAlias {
+  id        String   @id @default(uuid())
+  diseaseId String
+  disease   Disease  @relation(fields: [diseaseId], references: [id])
+  aliasName String
+  createdAt DateTime @default(now())
+}
+
+model Pathogen {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  type        String            // VIRUS, BACTERIA, PROTOZOA, FUNGI, HELMINTH, PRION
+  family      String?
+  genus       String?
+  variants    PathogenVariant[]
+  diseases    DiseasePathogen[]
+  createdAt   DateTime          @default(now())
+}
+
+model PathogenVariant {
+  id          String   @id @default(uuid())
+  pathogenId  String
+  pathogen    Pathogen @relation(fields: [pathogenId], references: [id])
+  variantName String
+  strainCode  String?
+  createdAt   DateTime @default(now())
+}
+
+model DiseasePathogen {
+  id         String   @id @default(uuid())
+  diseaseId  String
+  disease    Disease  @relation(fields: [diseaseId], references: [id])
+  pathogenId String
+  pathogen   Pathogen @relation(fields: [pathogenId], references: [id])
+  isPrimary  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model ClinicalSign {
+  id          String                @id @default(uuid())
+  code        String                @unique
+  name        String                @unique
+  description String?
+  bodySystem  String?               // RESPIRATORY, DIGESTIVE, REPRODUCTIVE, DERMATOLOGICAL, NEUROLOGICAL
+  diseases    DiseaseClinicalSign[]
+  createdAt   DateTime              @default(now())
+}
+
+model DiseaseClinicalSign {
+  id             String       @id @default(uuid())
+  diseaseId      String
+  disease        Disease      @relation(fields: [diseaseId], references: [id])
+  clinicalSignId String
+  clinicalSign   ClinicalSign @relation(fields: [clinicalSignId], references: [id])
+  severityLevel  String       @default("MODERATE") // MILD, MODERATE, SEVERE, PATHOGNOMONIC
+  frequency      String       @default("COMMON")   // COMMON, UNCOMMON, RARE
+  createdAt      DateTime     @default(now())
+}
+
+model BehaviouralSignal {
+  id          String                     @id @default(uuid())
+  code        String                     @unique
+  name        String                     @unique
+  category    String                     // ACTIVITY, FEEDING, MOVEMENT, RUMINATION, SOCIAL
+  diseases    DiseaseBehaviouralSignal[]
+  createdAt   DateTime                   @default(now())
+}
+
+model DiseaseBehaviouralSignal {
+  id                  String            @id @default(uuid())
+  diseaseId           String
+  disease             Disease           @relation(fields: [diseaseId], references: [id])
+  behaviouralSignalId String
+  behaviouralSignal   BehaviouralSignal @relation(fields: [behaviouralSignalId], references: [id])
+  typicalDropPercent  Float?
+  createdAt           DateTime          @default(now())
+}
+
+model MeasurementType {
+  id              String                       @id @default(uuid())
+  code            String                       @unique // TEMP, HEART_RATE, RUM_MIN, ACT_INDEX
+  name            String
+  unit            String
+  referenceRanges MeasurementReferenceRange[]
+  createdAt       DateTime                     @default(now())
+}
+
+model MeasurementReferenceRange {
+  id                String          @id @default(uuid())
+  measurementTypeId String
+  measurementType   MeasurementType @relation(fields: [measurementTypeId], references: [id])
+  speciesCode       String
+  normalMin         Float
+  normalMax         Float
+  criticalMin       Float?
+  criticalMax       Float?
+  createdAt         DateTime        @default(now())
+}
+
+model RiskFactor {
+  id          String              @id @default(uuid())
+  name        String              @unique
+  category    String              // ENVIRONMENTAL, MANAGEMENT, DEMOGRAPHIC, EPIDEMIOLOGICAL
+  diseases    DiseaseRiskFactor[]
+  createdAt   DateTime            @default(now())
+}
+
+model DiseaseRiskFactor {
+  id           String     @id @default(uuid())
+  diseaseId    String
+  disease      Disease    @relation(fields: [diseaseId], references: [id])
+  riskFactorId String
+  riskFactor   RiskFactor @relation(fields: [riskFactorId], references: [id])
+  weight       Float      @default(1.0)
+  createdAt    DateTime   @default(now())
+}
+
+model TransmissionRoute {
+  id          String                @id @default(uuid())
+  name        String                @unique // DIRECT_CONTACT, FOMITES, VECTOR_BORNE, AIRBORNE, WATERBORNE
+  diseases    DiseaseTransmission[]
+  createdAt   DateTime              @default(now())
+}
+
+model DiseaseTransmission {
+  id                  String            @id @default(uuid())
+  diseaseId           String
+  disease             Disease           @relation(fields: [diseaseId], references: [id])
+  transmissionRouteId String
+  transmissionRoute   TransmissionRoute @relation(fields: [transmissionRouteId], references: [id])
+  relativeRiskWeight  Float             @default(1.0)
+  createdAt           DateTime          @default(now())
+}
+
+model Vector {
+  id          String          @id @default(uuid())
+  name        String          @unique // Biting flies, Ticks, Mosquitoes
+  scientificName String?
+  diseases    DiseaseVector[]
+  createdAt   DateTime        @default(now())
+}
+
+model DiseaseVector {
+  id        String   @id @default(uuid())
+  diseaseId String
+  disease   Disease  @relation(fields: [diseaseId], references: [id])
+  vectorId  String
+  vector    Vector   @relation(fields: [vectorId], references: [id])
+  seasonality String?
+  createdAt DateTime @default(now())
+}
+
+model DiagnosticMethod {
+  id          String                    @id @default(uuid())
+  code        String                    @unique
+  name        String                    // RT-PCR, ELISA, Clinical Exam, Bacterial Culture
+  type        String                    // MOLECULAR, SEROLOGICAL, CLINICAL, MICROBIOLOGICAL
+  diseases    DiseaseDiagnosticMethod[]
+  labTests    LabTest[]
+  createdAt   DateTime                  @default(now())
+}
+
+model DiseaseDiagnosticMethod {
+  id                 String           @id @default(uuid())
+  diseaseId          String
+  disease            Disease          @relation(fields: [diseaseId], references: [id])
+  diagnosticMethodId String
+  diagnosticMethod   DiagnosticMethod @relation(fields: [diagnosticMethodId], references: [id])
+  sensitivity        Float?
+  specificity        Float?
+  isGoldStandard     Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+}
+
+model SampleType {
+  id                  String                     @id @default(uuid())
+  name                String                     @unique // Blood, Serum, Nasal Swab, Tissue, Milk
+  preservationMethod  String?
+  diseaseRequirements DiseaseSampleRequirement[]
+  labSamples          LabSample[]
+  createdAt           DateTime                   @default(now())
+}
+
+model DiseaseSampleRequirement {
+  id           String     @id @default(uuid())
+  diseaseId    String
+  disease      Disease    @relation(fields: [diseaseId], references: [id])
+  sampleTypeId String
+  sampleType   SampleType @relation(fields: [sampleTypeId], references: [id])
+  instructions String?
+  createdAt    DateTime   @default(now())
+}
+
+model Vaccine {
+  id          String                @id @default(uuid())
+  name        String                @unique // FMD Vaccine, PPR Vaccine, LSD Vaccine
+  type        String                // INACTIVATED, LIVE_ATTENUATED, RECOMBINANT
+  protocols   VaccinationProtocol[]
+  records     VaccinationRecord[]
+  createdAt   DateTime              @default(now())
+}
+
+model VaccinationProtocol {
+  id                 String   @id @default(uuid())
+  vaccineId          String
+  vaccine            Vaccine  @relation(fields: [vaccineId], references: [id])
+  speciesCode        String
+  scheduleFrequency  String   // Annual, Biannual, One-time
+  recommendedAgeDays Int?
+  createdAt          DateTime @default(now())
+}
+
+model PreventionMeasure {
+  id          String              @id @default(uuid())
+  title       String              @unique
+  category    String              // BIOSECURITY, VECTOR_CONTROL, DISINFECTION, MOVEMENT_CONTROL
+  diseases    DiseasePrevention[]
+  createdAt   DateTime            @default(now())
+}
+
+model DiseasePrevention {
+  id                  String            @id @default(uuid())
+  diseaseId           String
+  disease             Disease           @relation(fields: [diseaseId], references: [id])
+  preventionMeasureId String
+  preventionMeasure   PreventionMeasure @relation(fields: [preventionMeasureId], references: [id])
+  efficacyRating      String            @default("HIGH")
+  createdAt           DateTime          @default(now())
+}
+
+model Seasonality {
+  id          String               @id @default(uuid())
+  name        String               @unique // Monsoon, Post-Monsoon, Summer, Winter
+  startMonth  Int
+  endMonth    Int
+  diseases    DiseaseSeasonality[]
+  createdAt   DateTime             @default(now())
+}
+
+model DiseaseSeasonality {
+  id            String      @id @default(uuid())
+  diseaseId     String
+  disease       Disease     @relation(fields: [diseaseId], references: [id])
+  seasonalityId String
+  seasonality   Seasonality @relation(fields: [seasonalityId], references: [id])
+  riskMultiplier Float      @default(1.3)
+  createdAt     DateTime    @default(now())
+}
+
+model EnvironmentalFactor {
+  id          String                           @id @default(uuid())
+  name        String                           @unique // Standing water, High humidity, Heat stress
+  diseases    DiseaseEnvironmentRelationship[]
+  createdAt   DateTime                         @default(now())
+}
+
+model DiseaseEnvironmentRelationship {
+  id                    String              @id @default(uuid())
+  diseaseId             String
+  disease               Disease             @relation(fields: [diseaseId], references: [id])
+  environmentalFactorId String
+  environmentalFactor   EnvironmentalFactor @relation(fields: [environmentalFactorId], references: [id])
+  impactLevel           String              @default("HIGH")
+  createdAt             DateTime            @default(now())
+}
+
+model DiseaseRegion {
+  id         String   @id @default(uuid())
+  diseaseId  String
+  disease    Disease  @relation(fields: [diseaseId], references: [id])
+  regionName String
+  endemicity String   @default("ENDEMIC") // ENDEMIC, SPORADIC, EXOTIC
+  createdAt  DateTime @default(now())
+}
+
+model RegulatoryAuthority {
+  id              String             @id @default(uuid())
+  name            String             @unique // DAHD, Maharashtra Commissionerate of Animal Husbandry, WOAH
+  level           String             // STATE, NATIONAL, INTERNATIONAL
+  notifiableRules NotifiableDisease[]
+  createdAt       DateTime           @default(now())
+}
+
+model NotifiableDisease {
+  id                    String              @id @default(uuid())
+  regulatoryAuthorityId String
+  regulatoryAuthority   RegulatoryAuthority @relation(fields: [regulatoryAuthorityId], references: [id])
+  diseaseCode           String
+  reportingWindowHours  Int                 @default(24)
+  reportingRules        ReportingRule[]
+  createdAt             DateTime            @default(now())
+}
+
+model ReportingRule {
+  id                  String            @id @default(uuid())
+  notifiableDiseaseId String
+  notifiableDisease   NotifiableDisease @relation(fields: [notifiableDiseaseId], references: [id])
+  triggerCondition    String
+  actionRequired      String
+  createdAt           DateTime          @default(now())
+}
+
+model Language {
+  id            String         @id @default(uuid())
+  code          String         @unique // en, mr, hi
+  name          String
+  localizations Localization[]
+  createdAt     DateTime       @default(now())
+}
+
+model Localization {
+  id           String   @id @default(uuid())
+  languageId   String
+  language     Language @relation(fields: [languageId], references: [id])
+  entityType   String
+  entityId     String
+  fieldKey     String
+  translatedText String
+  createdAt    DateTime @default(now())
+}
+
+model EvidenceSource {
+  id              String          @id @default(uuid())
+  name            String          // ICAR, DAHD, WOAH, FAO, Peer-Reviewed Journal
+  organization    String
+  url             String?
+  publicationYear Int?
+  claims          EvidenceClaim[]
+  createdAt       DateTime        @default(now())
+}
+
+model EvidenceClaim {
+  id               String            @id @default(uuid())
+  sourceId         String
+  source           EvidenceSource    @relation(fields: [sourceId], references: [id])
+  claimText        String
+  evidenceStrength String            @default("HIGH") // HIGH, MODERATE, FIELD_VALIDATION_REQUIRED
+  verificationStatus String          @default("VERIFIED")
+  documents        EvidenceDocument[]
+  createdAt        DateTime          @default(now())
+}
+
+model EvidenceDocument {
+  id         String        @id @default(uuid())
+  claimId    String
+  claim      EvidenceClaim @relation(fields: [claimId], references: [id])
+  title      String
+  fileUrl    String
+  checksum   String?
+  createdAt  DateTime      @default(now())
+}
+
+model KnowledgeBaseVersion {
+  id            String             @id @default(uuid())
+  versionCode   String             @unique // KB-MH-1.0
+  changeSummary String
+  checksum      String
+  reviewStatus  String             @default("APPROVED") // DRAFT, REVIEW, APPROVED
+  approvedBy    String?
+  approvedAt    DateTime?
+  changeLogs    KnowledgeChangeLog[]
+  createdAt     DateTime           @default(now())
+}
+
+model KnowledgeChangeLog {
+  id             String               @id @default(uuid())
+  versionId      String
+  version        KnowledgeBaseVersion @relation(fields: [versionId], references: [id])
+  entityName     String
+  actionType     String               // CREATE, UPDATE, DELETE
+  changeDetail   String
+  createdAt      DateTime             @default(now())
+}
+
+model DiseaseSpeciesAssociation {
+  id              String   @id @default(uuid())
+  recordCode      String   @unique // REC_01 to REC_33
+  diseaseId       String
+  disease         Disease  @relation(fields: [diseaseId], references: [id])
+  speciesId       String
+  species         Species  @relation(fields: [speciesId], references: [id])
+  susceptibility  String   @default("HIGH") // HIGH, MODERATE, LOW
+  evidenceStatus  String   @default("Established")
+  createdAt       DateTime @default(now())
+}
+
+model BreedDiseaseRelationship {
+  id               String   @id @default(uuid())
+  breedId          String
+  breed            Breed    @relation(fields: [breedId], references: [id])
+  diseaseId        String
+  disease          Disease  @relation(fields: [diseaseId], references: [id])
+  relativeRisk     Float    @default(1.0)
+  evidenceNote     String?
+  createdAt        DateTime @default(now())
+}
+
+model DiseaseKnowledgeRule {
+  id               String   @id @default(uuid())
+  diseaseId        String
+  disease          Disease  @relation(fields: [diseaseId], references: [id])
+  ruleName         String
+  triggerCondition String   // JSON or expression string
+  riskScoreImpact  Int      @default(2)
+  explanationText  String
+  createdAt        DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// 3. OPERATIONAL MULTI-TENANT & USER MODELS
+// ----------------------------------------------------
+
+model Tenant {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  slug          String         @unique
+  tenantType    String         @default("GOVERNMENT") // FARMER_ORG, DAIRY_CO, VET_CLINIC, GOVERNMENT, NGO
+  organizations Organization[]
+  tenantUsers   TenantUser[]
+  farms         Farm[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  code      String   @unique
+  farms     Farm[]
+  createdAt DateTime @default(now())
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  name        String       @unique // FARMER, FIELD_WORKER, VETERINARIAN, DISTRICT_OFFICIAL, STATE_OFFICIAL, ADMIN
+  permissions Permission[]
+  users       User[]
+  createdAt   DateTime     @default(now())
+}
+
+model Permission {
+  id        String   @id @default(uuid())
+  action    String   @unique // farm:read, animal:create, vet_case:manage, lab:order
+  roles     Role[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id            String                 @id @default(uuid())
+  username      String                 @unique
+  email         String?                @unique
+  passwordHash  String?
+  fullName      String
+  roleId        String
+  role          Role                   @relation(fields: [roleId], references: [id])
+  tenantUsers   TenantUser[]
+  farms         Farm[]
+  observations  HealthObservation[]
+  casesAssigned Case[]                 @relation("AssignedVet")
+  casesCreated  Case[]                 @relation("CaseCreator")
+  labOrders     LabOrder[]
+  alertsAcked   AlertAcknowledgement[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+}
+
+model TenantUser {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, userId])
+}
+
+// ----------------------------------------------------
+// 4. FARM & ANIMAL OPERATIONAL MODELS
+// ----------------------------------------------------
+
+model Farm {
+  id             String         @id @default(uuid())
+  code           String         @unique
+  name           String
+  ownerId        String?
+  owner          User?          @relation(fields: [ownerId], references: [id])
+  tenantId       String?
+  tenant         Tenant?        @relation(fields: [tenantId], references: [id])
+  organizationId String?
+  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  districtId     String
+  district       District       @relation(fields: [districtId], references: [id])
+  villageId      String?
+  village        Village?       @relation(fields: [villageId], references: [id])
+  latitude       Float
+  longitude      Float
+  address        String?
+  animals        Animal[]
+  locations      FarmLocation[]
+  devices        Device[]
+  cases          Case[]
+  clusters       ClusterMember[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model FarmLocation {
+  id         String   @id @default(uuid())
+  farmId     String
+  farm       Farm     @relation(fields: [farmId], references: [id])
+  latitude   Float
+  longitude  Float
+  accuracy   Float?
+  createdAt  DateTime @default(now())
 }
 
 model Animal {
+  id              String                 @id @default(uuid())
+  tagId           String                 @unique // MH-CAT-027, etc.
+  speciesId       String
+  species         Species                @relation(fields: [speciesId], references: [id])
+  breedId         String?
+  breed           Breed?                 @relation(fields: [breedId], references: [id])
+  farmId          String
+  farm            Farm                   @relation(fields: [farmId], references: [id])
+  gender          String                 @default("FEMALE") // MALE, FEMALE
+  ageMonths       Int                    @default(24)
+  weightKg        Float?
+  productionStage String?                @default("LACTATING") // LACTATING, DRY, HEIFER, BREEDING, YOUNG
+  healthStatus    String                 @default("HEALTHY")   // HEALTHY, WATCH, SICK, ISOLATED, DECEASED
+  riskLevel       String                 @default("GREEN")     // GREEN, YELLOW, ORANGE, RED, CRITICAL
+  identities      AnimalIdentity[]
+  movements       AnimalMovement[]
+  observations    HealthObservation[]
+  fingerprints    HealthFingerprint[]
+  healthEvents    HealthEvent[]
+  riskAssessments RiskAssessment[]
+  sourceExposures ExposureEvent[]        @relation("SourceAnimal")
+  targetExposures ExposureEvent[]        @relation("TargetAnimal")
+  cases           Case[]
+  vaccinations    VaccinationRecord[]
+  treatments      TreatmentRecord[]
+  clinicalVisits  ClinicalVisit[]
+  deviceAssigns   DeviceAssignment[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+}
+
+model AnimalIdentity {
+  id         String   @id @default(uuid())
+  animalId   String
+  animal     Animal   @relation(fields: [animalId], references: [id])
+  idType     String   // RFID, EAR_TAG, MICROCHIP, BARCODE
+  idValue    String
+  createdAt  DateTime @default(now())
+}
+
+model AnimalMovement {
+  id           String    @id @default(uuid())
+  animalId     String
+  animal       Animal    @relation(fields: [animalId], references: [id])
+  fromFarmId   String
+  toFarmId     String
+  movementDate DateTime
+  reason       String?
+  approvedBy   String?
+  createdAt    DateTime  @default(now())
+}
+
+// ----------------------------------------------------
+// 5. OBSERVATIONS, FINGERPRINT & INTELLIGENCE
+// ----------------------------------------------------
+
+model HealthObservation {
+  id                 String                @id @default(uuid())
+  animalId           String
+  animal             Animal                @relation(fields: [animalId], references: [id])
+  observerId         String?
+  observer           User?                 @relation(fields: [observerId], references: [id])
+  dataSource         String                @default("FIELD_WORKER") // REAL_SENSOR, REAL_CAMERA, FIELD_WORKER, VETERINARIAN, LAB, SIMULATOR, IMPORTED
+  timestamp          DateTime              @default(now())
+  activityLevel      Float?
+  feedingMinutes     Float?
+  movementMeters     Float?
+  ruminationMinutes  Float?
+  temperatureCelsius Float?
+  notes              String?
+  clinicalObs        ClinicalObservation[]
+  behaviourObs       BehaviourObservation[]
+  iotReadings        IoTReading[]
+  cameraObs          CameraObservation[]
+  createdAt          DateTime              @default(now())
+}
+
+model ClinicalObservation {
+  id             String            @id @default(uuid())
+  observationId  String
+  observation    HealthObservation @relation(fields: [observationId], references: [id])
+  signName       String
+  severity       String            @default("MODERATE")
+  present        Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+}
+
+model BehaviourObservation {
+  id            String            @id @default(uuid())
+  observationId String
+  observation   HealthObservation @relation(fields: [observationId], references: [id])
+  behaviourName String
+  value         Float?
+  createdAt     DateTime          @default(now())
+}
+
+model IoTReading {
+  id            String            @id @default(uuid())
+  observationId String
+  observation   HealthObservation @relation(fields: [observationId], references: [id])
+  sensorType    String            // TEMPERATURE, ACCELEROMETER, IMU, GPS, FEED_CELL
+  rawValue      Float
+  unit          String
+  createdAt     DateTime          @default(now())
+}
+
+model CameraObservation {
+  id            String            @id @default(uuid())
+  observationId String
+  observation   HealthObservation @relation(fields: [observationId], references: [id])
+  signalType    String            // GAIT_ABNORMALITY, ISOLATION, POSTURE_CHANGE, LESION_DETECTED
+  confidence    Float             @default(0.85)
+  frameRef      String?
+  createdAt     DateTime          @default(now())
+}
+
+model HealthFingerprint {
+  id               String                     @id @default(uuid())
+  animalId         String
+  animal           Animal                     @relation(fields: [animalId], references: [id])
+  baselineWindow   Int                        @default(7) // 7-day rolling window
+  confidenceScore  Float                      @default(0.9)
+  baselineActivity Float                      @default(80.0)
+  baselineFeeding  Float                      @default(80.0)
+  baselineMovement Float                      @default(80.0)
+  baselineRumination Float                    @default(80.0)
+  features         HealthFingerprintFeature[]
+  versions         HealthBaselineVersion[]
+  updatedAt        DateTime                   @updatedAt
+  createdAt        DateTime                   @default(now())
+}
+
+model HealthFingerprintFeature {
+  id            String            @id @default(uuid())
+  fingerprintId String
+  fingerprint   HealthFingerprint @relation(fields: [fingerprintId], references: [id])
+  featureKey    String            // activity_7d_mean, feeding_7d_std, etc.
+  featureValue  Float
+  createdAt     DateTime          @default(now())
+}
+
+model HealthBaselineVersion {
+  id            String            @id @default(uuid())
+  fingerprintId String
+  fingerprint   HealthFingerprint @relation(fields: [fingerprintId], references: [id])
+  versionNum    Int
+  snapshotJson  String
+  createdAt     DateTime          @default(now())
+}
+
+model HealthEvent {
+  id               String          @id @default(uuid())
+  animalId         String
+  animal           Animal          @relation(fields: [animalId], references: [id])
+  suspectedDiseaseId String?
+  suspectedDisease Disease?        @relation(fields: [suspectedDiseaseId], references: [id])
+  eventTimestamp   DateTime        @default(now())
+  severity         String          @default("ORANGE") // YELLOW, ORANGE, RED, CRITICAL
+  summary          String
+  evidences        EventEvidence[]
+  snapshots        EventSnapshot[]
+  alerts           Alert[]
+  createdAt        DateTime        @default(now())
+}
+
+model EventEvidence {
+  id            String      @id @default(uuid())
+  eventId       String
+  event         HealthEvent @relation(fields: [eventId], references: [id])
+  evidenceType  String      // BASELINE_DEVIATION, CLINICAL_SIGN, EXPOSURE_CONTACT, VECTOR_SEASON
+  description   String
+  weight        Float       @default(1.0)
+  createdAt     DateTime    @default(now())
+}
+
+model EventSnapshot {
+  id            String      @id @default(uuid())
+  eventId       String
+  event         HealthEvent @relation(fields: [eventId], references: [id])
+  snapshotJson  String      // Complete state capture (telemetry, baseline, risk, evidence)
+  createdAt     DateTime    @default(now())
+}
+
+model RiskAssessment {
+  id                  String          @id @default(uuid())
+  animalId            String
+  animal              Animal          @relation(fields: [animalId], references: [id])
+  riskScore           Float
+  riskLevel           String          @default("GREEN") // GREEN, YELLOW, ORANGE, RED, CRITICAL
+  confidence          String          @default("Moderate")
+  recommendedAction   String
+  evidences           RiskEvidence[]
+  explanations        RiskExplanation[]
+  createdAt           DateTime        @default(now())
+}
+
+model RiskEvidence {
+  id               String         @id @default(uuid())
+  riskAssessmentId String
+  riskAssessment   RiskAssessment @relation(fields: [riskAssessmentId], references: [id])
+  evidenceText     String
+  evidenceCategory String
+  createdAt        DateTime       @default(now())
+}
+
+model RiskExplanation {
+  id               String         @id @default(uuid())
+  riskAssessmentId String
+  riskAssessment   RiskAssessment @relation(fields: [riskAssessmentId], references: [id])
+  whatChanged      String
+  whyItMatters     String
+  whatIsUncertain  String
+  whatNext         String
+  createdAt        DateTime       @default(now())
+}
+
+// ----------------------------------------------------
+// 6. ALERTS, EXPOSURE & CLUSTERS
+// ----------------------------------------------------
+
+model Alert {
+  id               String                 @id @default(uuid())
+  healthEventId    String?
+  healthEvent      HealthEvent?           @relation(fields: [healthEventId], references: [id])
+  title            String
+  severity         String                 @default("ORANGE") // YELLOW, ORANGE, RED, CRITICAL
+  status           String                 @default("OPEN")   // OPEN, ACKNOWLEDGED, RESOLVED, CLOSED
+  district         String
+  farmName         String
+  animalTag        String
+  diseaseName      String?
+  recommendedAction String
+  recipients       AlertRecipient[]
+  acknowledgements AlertAcknowledgement[]
+  cases            Case[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+}
+
+model AlertRecipient {
   id        String   @id @default(uuid())
-  species   String
-  breed     String
+  alertId   String
+  alert     Alert    @relation(fields: [alertId], references: [id])
+  userRole  String   // FARMER, VETERINARIAN, DISTRICT_OFFICIAL, STATE_OFFICIAL
+  sentAt    DateTime @default(now())
+}
+
+model AlertAcknowledgement {
+  id          String   @id @default(uuid())
+  alertId     String
+  alert       Alert    @relation(fields: [alertId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  notes       String?
+  ackedAt     DateTime @default(now())
+}
+
+model ExposureEvent {
+  id                 String         @id @default(uuid())
+  sourceId           String
+  source             Animal         @relation("SourceAnimal", fields: [sourceId], references: [id])
+  targetId           String
+  target             Animal         @relation("TargetAnimal", fields: [targetId], references: [id])
+  diseaseId          String?
+  disease            Disease?       @relation(fields: [diseaseId], references: [id])
+  exposureType       String         @default("Direct contact") // Direct contact, Shared feed/water, Fomites, Proximity
+  distanceMeters     Float          @default(5.0)
+  contactCount       Int            @default(1)
+  durationMinutes    Int            @default(30)
+  compositeRiskScore Float          @default(5.0)
+  riskLevel          String         @default("MEDIUM") // LOW, MEDIUM, HIGH
+  links              ExposureLink[]
+  timestamp          DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+}
+
+model ExposureLink {
+  id              String        @id @default(uuid())
+  exposureEventId String
+  exposureEvent   ExposureEvent @relation(fields: [exposureEventId], references: [id])
+  contactNodeId   String
+  linkType        String
+  createdAt       DateTime      @default(now())
+}
+
+model Cluster {
+  id             String          @id @default(uuid())
+  code           String          @unique // CL_PUNE_1726500000
+  districtId     String
+  district       District        @relation(fields: [districtId], references: [id])
+  animalCount    Int             @default(0)
+  status         String          @default("POTENTIAL_CLUSTER") // POTENTIAL_CLUSTER, CONFIRMED_OUTBREAK, CONTAINED
+  description    String
+  members        ClusterMember[]
+  containment    ContainmentZone?
+  detectedAt     DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model ClusterMember {
+  id        String   @id @default(uuid())
+  clusterId String
+  cluster   Cluster  @relation(fields: [clusterId], references: [id])
   farmId    String
   farm      Farm     @relation(fields: [farmId], references: [id])
+  animalTag String
+  riskLevel String   @default("RED")
   createdAt DateTime @default(now())
 }
 
-model Farm {
-  id        String   @id @default(uuid())
-  name      String
-  district  String
-  animals   Animal[]
-  createdAt DateTime @default(now())
+model ContainmentZone {
+  id           String   @id @default(uuid())
+  clusterId    String   @unique
+  cluster      Cluster  @relation(fields: [clusterId], references: [id])
+  radiusKm     Float    @default(5.0)
+  centerLat    Float
+  centerLng    Float
+  status       String   @default("ACTIVE") // ACTIVE, LIFTED
+  instructions String?
+  createdAt    DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// 7. VETERINARY CASE & LAB WORKFLOW MODELS
+// ----------------------------------------------------
+
+model Case {
+  id                String              @id @default(uuid())
+  caseNumber        String              @unique // CASE-2026-001
+  animalId          String
+  animal            Animal              @relation(fields: [animalId], references: [id])
+  farmId            String
+  farm              Farm                @relation(fields: [farmId], references: [id])
+  assignedVetId     String?
+  assignedVet       User?               @relation("AssignedVet", fields: [assignedVetId], references: [id])
+  createdById       String?             // Who opened this case
+  createdBy         User?               @relation("CaseCreator", fields: [createdById], references: [id])
+  alertId           String?             // Originating alert (optional FK for traceability)
+  alert             Alert?              @relation(fields: [alertId], references: [id])
+  suspectedDiseaseId String?
+  suspectedDisease  Disease?            @relation(fields: [suspectedDiseaseId], references: [id])
+  status            String              @default("SUSPECTED") // SUSPECTED, INVESTIGATING, LAB_PENDING, CONFIRMED, REJECTED, RESOLVED
+  priority          String              @default("HIGH")      // LOW, MEDIUM, HIGH, URGENT
+  clinicalNotes     String?             // System/brain-derived notes
+  vetAssessment     String?             // Veterinarian's clinical assessment (distinct from Brain risk output)
+  vetAssessmentAt   DateTime?           // When the vet recorded their assessment
+  history           CaseStatusHistory[]
+  labOrders         LabOrder[]
+  treatments        TreatmentRecord[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model CaseStatusHistory {
+  id         String   @id @default(uuid())
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id])
+  oldStatus  String
+  newStatus  String
+  changedBy  String?
+  notes      String?
+  changedAt  DateTime @default(now())
+}
+
+model LabFacility {
+  id          String     @id @default(uuid())
+  name        String     @unique // Maharashtra State Veterinary Biological Products Institute, Pune
+  code        String     @unique
+  accredited  Boolean    @default(true)
+  district    String
+  labOrders   LabOrder[]
+  createdAt   DateTime   @default(now())
+}
+
+model LabOrder {
+  id               String       @id @default(uuid())
+  orderNumber      String       @unique // LAB-2026-089
+  caseId           String?
+  case             Case?        @relation(fields: [caseId], references: [id])
+  labFacilityId    String?
+  labFacility      LabFacility? @relation(fields: [labFacilityId], references: [id])
+  requestorId      String?
+  requestor        User?        @relation(fields: [requestorId], references: [id])
+  suspectedDiseaseId String?
+  suspectedDisease Disease?     @relation(fields: [suspectedDiseaseId], references: [id])
+  status           String       @default("ORDERED") // ORDERED, SAMPLE_COLLECTED, IN_TRANSIT, RECEIVED, TESTING, COMPLETED
+  priority         String       @default("URGENT")
+  samples          LabSample[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+model LabSample {
+  id           String                 @id @default(uuid())
+  sampleCode   String                 @unique // SMP-2026-901
+  labOrderId   String
+  labOrder     LabOrder               @relation(fields: [labOrderId], references: [id])
+  sampleTypeId String?
+  sampleType   SampleType?            @relation(fields: [sampleTypeId], references: [id])
+  collectedAt  DateTime               @default(now())
+  collectedBy  String?
+  custodyChain SampleChainOfCustody[]
+  tests        LabTest[]
+  createdAt    DateTime               @default(now())
+}
+
+model SampleChainOfCustody {
+  id          String    @id @default(uuid())
+  sampleId    String
+  sample      LabSample @relation(fields: [sampleId], references: [id])
+  handledBy   String
+  action      String    // COLLECTED, DISPATCHED, RECEIVED_AT_LAB, STORED, TESTED
+  timestamp   DateTime  @default(now())
+  notes       String?
+}
+
+model LabTest {
+  id                 String            @id @default(uuid())
+  sampleId           String
+  sample             LabSample         @relation(fields: [sampleId], references: [id])
+  diagnosticMethodId String?
+  diagnosticMethod   DiagnosticMethod? @relation(fields: [diagnosticMethodId], references: [id])
+  testName           String            // RT-PCR, ELISA, Blood Smear
+  status             String            @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  results            LabResult[]
+  createdAt          DateTime          @default(now())
+}
+
+model LabResult {
+  id            String    @id @default(uuid())
+  labTestId     String
+  labTest       LabTest   @relation(fields: [labTestId], references: [id])
+  resultOutcome String    // POSITIVE, NEGATIVE, INCONCLUSIVE
+  quantitativeValue String?
+  remarks       String?
+  verifiedBy    String?
+  verifiedAt    DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+model VaccinationRecord {
+  id            String    @id @default(uuid())
+  animalId      String
+  animal        Animal    @relation(fields: [animalId], references: [id])
+  vaccineId     String?
+  vaccine       Vaccine?  @relation(fields: [vaccineId], references: [id])
+  vaccineName   String
+  batchNumber   String?
+  administeredAt DateTime @default(now())
+  administeredBy String?
+  nextDueDate   DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+model TreatmentRecord {
+  id            String    @id @default(uuid())
+  caseId        String?
+  case          Case?     @relation(fields: [caseId], references: [id])
+  animalId      String
+  animal        Animal    @relation(fields: [animalId], references: [id])
+  treatmentName String
+  dosage        String?
+  administeredAt DateTime @default(now())
+  administeredBy String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
+
+model ClinicalVisit {
+  id            String    @id @default(uuid())
+  animalId      String
+  animal        Animal    @relation(fields: [animalId], references: [id])
+  vetName       String
+  visitDate     DateTime  @default(now())
+  findings      String
+  recommendation String?
+  createdAt     DateTime  @default(now())
+}
+
+// ----------------------------------------------------
+// 8. IOT DEVICES & HARDWARE MODELS
+// ----------------------------------------------------
+
+model Device {
+  id           String             @id @default(uuid())
+  deviceCode   String             @unique // ESP32-COLLAR-001
+  deviceType   String             @default("SMART_COLLAR") // SMART_COLLAR, EAR_TAG_SENSOR, RUMEN_BOLUS, GATEWAY
+  firmwareVer  String             @default("1.0.4")
+  farmId       String?
+  farm         Farm?              @relation(fields: [farmId], references: [id])
+  sensors      Sensor[]
+  gateways     Gateway[]
+  assignments  DeviceAssignment[]
+  status       String             @default("ONLINE") // ONLINE, OFFLINE, MAINTENANCE
+  lastPingAt   DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model Sensor {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id])
+  sensorType  String   // TEMPERATURE, ACCELEROMETER, GYRO, GPS, MICROPHONE
+  modelNumber String?
+  createdAt   DateTime @default(now())
+}
+
+model Gateway {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id])
+  ipAddress   String?
+  protocol    String   @default("MQTT") // MQTT, HTTP, LORAWAN, BLE
+  createdAt   DateTime @default(now())
+}
+
+model DeviceAssignment {
+  id         String    @id @default(uuid())
+  deviceId   String
+  device     Device    @relation(fields: [deviceId], references: [id])
+  animalId   String
+  animal     Animal    @relation(fields: [animalId], references: [id])
+  assignedAt DateTime  @default(now())
+  unassignedAt DateTime?
+}
+
+// ----------------------------------------------------
+// 9. OFFLINE SYNC QUEUE & AUDIT MODELS
+// ----------------------------------------------------
+
+model SyncQueue {
+  id         String        @id @default(uuid())
+  clientRef  String        @unique
+  entityName String
+  actionType String        // CREATE, UPDATE
+  payloadJson String
+  status     String        @default("PENDING") // PENDING, SYNCED, CONFLICT, FAILED
+  attempts   SyncAttempt[]
+  conflicts  SyncConflict[]
+  queuedAt   DateTime      @default(now())
+  syncedAt   DateTime?
+}
+
+model SyncAttempt {
+  id          String    @id @default(uuid())
+  syncQueueId String
+  syncQueue   SyncQueue @relation(fields: [syncQueueId], references: [id])
+  attemptNum  Int
+  errorMsg    String?
+  timestamp   DateTime  @default(now())
+}
+
+model SyncConflict {
+  id             String    @id @default(uuid())
+  syncQueueId    String
+  syncQueue      SyncQueue @relation(fields: [syncQueueId], references: [id])
+  conflictDetail String
+  resolved       Boolean   @default(false)
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   // ANIMAL_CREATED, CASE_UPDATED, ALERT_ACKNOWLEDGED, KNOWLEDGE_MODIFIED
+  entityId   String
+  detail     String?
+  timestamp  DateTime @default(now())
 }

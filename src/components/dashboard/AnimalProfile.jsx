@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { RiskBadge, Card, SectionTitle, StatCard } from '../common/UIComponents';
 import { build7DayHistory } from '../../engine/baselineEngine';
-import { store } from '../../db/store';
+import { api } from '../../services/api/api';
 
 const inputCls = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100";
 
@@ -46,21 +46,76 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
   const [vacForm, setVacForm] = useState({ vaccineName: '', diseaseId: '', date: '', nextDue: '', batchNo: '', administeredBy: '' });
   const [saved, setSaved] = useState('');
 
+  const [backendAnimal, setBackendAnimal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function fetchAnimal() {
+      setLoading(true);
+      setError(null);
+      const res = await api.animals.getById(animalId);
+      if (res.success) {
+        // Fetch authoritative risk evaluation from backend
+        const riskRes = await api.intelligence.evaluate(animalId, {});
+        if (riskRes.success) {
+          res.data.riskEvaluation = riskRes.data;
+          res.data.riskLevel = riskRes.data.riskLevel;
+        }
+        setBackendAnimal(res.data);
+      } else {
+        setError(res.error || 'Failed to load animal data');
+      }
+      setLoading(false);
+    }
+    if (animalId) fetchAnimal();
+  }, [animalId]);
+
   const animal = useMemo(() => {
-    const a = liveData.animals.find(a => a.id === animalId);
-    if (!a) return null;
-    const species  = liveData.species?.find(s => s.id === a.speciesId) || { name: a.speciesId };
-    const breed    = liveData.breeds?.find(b => b.id === a.breedId)    || { name: a.breedId };
-    const farm     = liveData.farms?.find(f => f.id === a.farmId)      || { name: '—', district: '—' };
+    if (!backendAnimal) return null;
+    const a = backendAnimal;
+    
+    // We mix backend data with legacy liveData for un-migrated tabs
     const vaccinations = (liveData.vaccinations || []).filter(v => v.animalId === a.id);
-    const observations = (liveData.observations || []).filter(o => o.animalId === a.id).sort((x,y) => new Date(y.timestamp) - new Date(x.timestamp));
     const cases = (liveData.cases || []).filter(c => c.animalId === a.id);
     const alerts = (liveData.alerts || []).filter(al => al.animalId === a.id).sort((x,y) => new Date(y.createdAt) - new Date(x.createdAt));
     const labSamples = (liveData.labSamples || []).filter(s => s.animalId === a.id);
     const exposures = (liveData.exposureEvents || []).filter(e => e.sourceId === a.id || e.targetId === a.id);
-    const history7d = build7DayHistory(a, liveData.observations || []);
-    return { ...a, species, breed, farm, vaccinations, observations, cases, alerts, labSamples, exposures, history7d };
-  }, [liveData, animalId]);
+    
+    // The backend provides observations, so we use those
+    const observations = (a.observations || []).sort((x,y) => new Date(y.timestamp) - new Date(x.timestamp));
+    
+    // History 7d is still generated from observations for the chart
+    // We need mock current/baseline if missing from DB for the radar chart
+    const current = a.current || { activity: 80, feeding: 80, movement: 80, rumination: 80, tempTrend: 'normal', social: 'normal' };
+    const baseline = a.baseline || { activity: 85, feeding: 85, movement: 85, rumination: 85 };
+    
+    const history7d = build7DayHistory(a, observations);
+    return { ...a, current, baseline, vaccinations, observations, cases, alerts, labSamples, exposures, history7d };
+  }, [backendAnimal, liveData]);
+
+  if (loading) {
+    return (
+      <div className="animate-in fade-in flex flex-col items-center justify-center p-20 text-slate-400">
+        <Activity className="animate-spin mb-4 text-teal-600" size={32} />
+        <p className="font-semibold text-sm">Connecting to authoritative backend...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="animate-in fade-in p-10 mt-10 max-w-lg mx-auto bg-red-50 border border-red-200 rounded-xl text-center">
+        <div className="mx-auto w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+          <Activity size={24} />
+        </div>
+        <h3 className="text-red-800 font-bold mb-2">Backend Connection Failed</h3>
+        <p className="text-red-600 text-sm">{error}</p>
+        <p className="text-xs text-red-500 mt-4 font-semibold uppercase tracking-wide">Network Error — Fallback Disabled</p>
+        <button onClick={() => setPage('animals')} className="mt-4 text-teal-700 underline text-sm">← Back to list</button>
+      </div>
+    );
+  }
 
   if (!animal) return (
     <div className="p-8 text-center text-slate-500">
@@ -70,8 +125,7 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
     </div>
   );
 
-  const ev = animal.riskEval || {};
-  const riskLevel = ev.healthRiskLevel || 'GREEN';
+  const riskLevel = animal.riskLevel || 'GREEN';
   const RISK = {
     GREEN: '#059669', YELLOW: '#d97706', ORANGE: '#ea580c', RED: '#dc2626', CRITICAL: '#7f1d1d'
   };
@@ -93,15 +147,30 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
     { id: 'exposure',    label: `Exposure (${animal.exposures.length})` },
   ];
 
-  function submitObservation() {
-    actions.addObservation(animal.id, { ...obsForm, reportedBy: 'Current User', reporterRole: role || 'farmer' });
-    setObsForm({ symptoms: [], notes: '', severity: 'Mild' });
-    setShowObsForm(false);
-    setSaved('Observation saved!');
-    setTimeout(() => setSaved(''), 2500);
+  async function submitObservation() {
+    const data = {
+      animalId: animal.id,
+      notes: obsForm.notes,
+      severity: obsForm.severity
+    };
+    
+    const res = await api.observations.create(data);
+    if (res.success) {
+      // Re-fetch to update profile
+      const updatedAnimal = await api.animals.getById(animal.id);
+      if (updatedAnimal.success) setBackendAnimal(updatedAnimal.data);
+      
+      setObsForm({ symptoms: [], notes: '', severity: 'Mild' });
+      setShowObsForm(false);
+      setSaved('Observation saved to backend!');
+      setTimeout(() => setSaved(''), 2500);
+    } else {
+      console.error(res.error);
+    }
   }
 
   function submitVaccination() {
+    // Legacy
     actions.addVaccination({ ...vacForm, animalId: animal.id });
     setVacForm({ vaccineName: '', diseaseId: '', date: '', nextDue: '', batchNo: '', administeredBy: '' });
     setShowVacForm(false);
@@ -110,7 +179,7 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
   }
 
   function openCase() {
-    actions.openCase({ animalId: animal.id, suspectedDiseaseId: ev.diseaseRisks?.[0]?.disease?.id, notes: '' });
+    actions.openCase({ animalId: animal.id, suspectedDiseaseId: null, notes: '' });
     setPage('cases');
   }
 
@@ -122,8 +191,8 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
           <button onClick={() => setPage('animals')} className="mb-2 flex items-center gap-1 text-sm text-teal-700 hover:text-teal-900">
             <ChevronLeft size={16} /> Back to Animals
           </button>
-          <h1 className="text-xl font-bold text-slate-900">{animal.name || animal.id}</h1>
-          <div className="text-sm text-slate-500">{animal.species?.name} · {animal.breed?.name} · {animal.farm?.name} · {animal.farm?.district}</div>
+          <h1 className="text-xl font-bold text-slate-900">{animal.name || animal.tagId || animal.id}</h1>
+          <div className="text-sm text-slate-500">{animal.species?.name} · {animal.breed?.name} · {animal.farm?.name}</div>
         </div>
         <div className="flex items-center gap-2">
           <RiskBadge level={riskLevel} size="lg" />
@@ -134,12 +203,12 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
       {/* Identification row */}
       <Card className="p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
-          <div><div className="text-xs text-slate-400 font-semibold">Tag / ID</div><div className="font-bold text-teal-800">{animal.id}</div></div>
-          <div><div className="text-xs text-slate-400 font-semibold">Age</div><div className="font-semibold">{animal.age} yrs</div></div>
-          <div><div className="text-xs text-slate-400 font-semibold">Sex</div><div className="font-semibold">{animal.sex}</div></div>
-          <div><div className="text-xs text-slate-400 font-semibold">Weight</div><div className="font-semibold">{animal.weight ? `${animal.weight} kg` : '—'}</div></div>
-          <div><div className="text-xs text-slate-400 font-semibold">Farm</div><div className="font-semibold">{animal.farm?.name || '—'}</div></div>
-          <div><div className="text-xs text-slate-400 font-semibold">Last Obs.</div><div className="font-semibold text-slate-600">{animal.lastObservation ? new Date(animal.lastObservation).toLocaleString('en-IN', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'short' }) : '—'}</div></div>
+          <div><div className="text-xs text-slate-400 font-semibold">Tag / ID</div><div className="font-bold text-teal-800">{animal.tagId || animal.id.slice(0,8)}</div></div>
+          <div><div className="text-xs text-slate-400 font-semibold">Age</div><div className="font-semibold">{animal.ageMonths ? Math.round(animal.ageMonths/12) : 2} yrs</div></div>
+          <div><div className="text-xs text-slate-400 font-semibold">Sex</div><div className="font-semibold">{animal.gender}</div></div>
+          <div><div className="text-xs text-slate-400 font-semibold">Weight</div><div className="font-semibold">{animal.weightKg ? `${animal.weightKg} kg` : '—'}</div></div>
+          <div><div className="text-xs text-slate-400 font-semibold">Farm</div><div className="font-semibold">{animal.farm?.name || animal.farmId || '—'}</div></div>
+          <div><div className="text-xs text-slate-400 font-semibold">Last Obs.</div><div className="font-semibold text-slate-600">{animal.observations?.[0]?.timestamp ? new Date(animal.observations[0].timestamp).toLocaleString('en-IN', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'short' }) : '—'}</div></div>
         </div>
       </Card>
 
@@ -161,7 +230,7 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
       {/* Observation form */}
       {showObsForm && (
         <Card className="p-4 border-teal-200">
-          <h3 className="font-bold text-slate-800 mb-3">New Observation</h3>
+          <h3 className="font-bold text-slate-800 mb-3">New Observation (API Integrated)</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Notes</span>
               <textarea className={inputCls} rows={2} value={obsForm.notes} onChange={e => setObsForm(f => ({ ...f, notes: e.target.value }))} />
@@ -173,7 +242,7 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
             </label>
           </div>
           <div className="flex gap-2 mt-3">
-            <button onClick={submitObservation} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600">Save</button>
+            <button onClick={submitObservation} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600">Save via API</button>
             <button onClick={() => setShowObsForm(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">Cancel</button>
           </div>
         </Card>
@@ -271,53 +340,52 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
       {/* ── RISK & DISEASE TAB ───────────────────────────────────────── */}
       {activeTab === 'risk' && (
         <div className="space-y-4">
-          {/* Risk reasons */}
           <Card className="p-5">
-            <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wide">Risk Reasoning (Score: {ev.score || 0})</h3>
-            {ev.reasons?.length ? (
-              <div className="space-y-2">
-                {ev.reasons.map((r, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                    <SourceIcon type={r.type} />
-                    <span>{r.text}</span>
-                  </div>
-                ))}
-              </div>
-            ) : <p className="text-slate-500 text-sm">No abnormalities detected.</p>}
-            <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm">
-              <span className="font-semibold text-slate-700">Recommended Action: </span>
-              <span className="text-slate-600">{ev.recommendedAction}</span>
+            <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wide">Risk Reasoning</h3>
+            <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm mb-4">
+              <span className="font-semibold text-slate-700">Authoritative Risk Level: </span>
+              <RiskBadge level={riskLevel} />
+              {animal.riskEvaluation && <span className="ml-4 text-slate-500">Score: {animal.riskEvaluation.riskScore}</span>}
+              {animal.riskEvaluation && <span className="ml-4 text-slate-500">Confidence: {animal.riskEvaluation.confidence}</span>}
             </div>
-            <p className="mt-3 text-xs text-slate-400 border-t border-slate-100 pt-2">
-              ⚠ Risk triage only. Not a veterinary diagnosis. Laboratory confirmation required.
-            </p>
-          </Card>
-
-          {/* Disease risk profile */}
-          <Card className="p-5">
-            <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wide">Species-Linked Disease Risk Profile</h3>
-            {ev.diseaseRisks?.length ? (
-              <div className="space-y-3">
-                {ev.diseaseRisks.map((dr, i) => (
-                  <div key={i} className={`rounded-lg border p-3 ${dr.risk === 'HIGH' ? 'border-red-200 bg-red-50' : dr.risk === 'MEDIUM' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <div>
-                        <span className="font-bold text-slate-900 text-sm">{dr.disease?.name}</span>
-                        {dr.isZoonotic && <span className="ml-2 text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200 px-1.5 py-0.5 rounded">ZOONOTIC</span>}
-                        {dr.isNotifiable && <span className="ml-1 text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded">NOTIFIABLE</span>}
-                      </div>
-                      <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border ${dr.risk === 'HIGH' ? 'bg-red-100 text-red-800 border-red-200' : dr.risk === 'MEDIUM' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>{dr.risk} RISK</span>
-                    </div>
-                    <div className="text-xs text-slate-500 mb-1">Evidence: {dr.assoc?.evidence}</div>
-                    <div className="space-y-0.5">
-                      {dr.why?.slice(0,3).map((w,j) => (
-                        <div key={j} className="text-xs text-slate-600 flex items-start gap-1"><span className="text-teal-500 shrink-0">•</span>{w}</div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            
+            {animal.riskEvaluation?.reasons?.length > 0 && (
+              <div className="mb-4">
+                <h4 className="font-semibold text-slate-800 text-sm mb-2">Evidence & Reasons</h4>
+                <ul className="space-y-2">
+                  {animal.riskEvaluation.reasons.map((r, i) => (
+                    <li key={i} className="flex gap-2 text-sm text-slate-700">
+                      <SourceIcon type={r.type} /> {r.text}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            ) : <p className="text-slate-500 text-sm">No species-linked disease associations found.</p>}
+            )}
+
+            {animal.riskEvaluation?.diseaseRisks?.length > 0 && (
+              <div className="mb-4">
+                <h4 className="font-semibold text-slate-800 text-sm mb-2">Potential Disease Risk</h4>
+                <ul className="space-y-2">
+                  {animal.riskEvaluation.diseaseRisks.map((d, i) => (
+                    <li key={i} className="text-sm text-slate-700">
+                      <span className="font-bold">{d.name}</span> ({d.risk} RISK)
+                      {d.why?.length > 0 && (
+                        <ul className="list-disc pl-5 mt-1 text-xs text-slate-500">
+                          {d.why.map((w, j) => <li key={j}>{w}</li>)}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {animal.riskEvaluation?.recommendedAction && (
+              <div>
+                <h4 className="font-semibold text-slate-800 text-sm mb-2">Recommended Action</h4>
+                <p className="text-sm text-slate-700 bg-teal-50 border border-teal-200 p-3 rounded-lg">{animal.riskEvaluation.recommendedAction}</p>
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -405,7 +473,7 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
           {animal.observations.length ? animal.observations.map(o => (
             <Card key={o.id} className="p-4">
               <div className="flex justify-between text-xs text-slate-500 mb-1">
-                <span className="font-semibold text-slate-700">{o.reportedBy}</span>
+                <span className="font-semibold text-slate-700">{o.reportedBy || o.observerId || 'Unknown'}</span>
                 <span>{new Date(o.timestamp).toLocaleString('en-IN')}</span>
               </div>
               <p className="text-sm text-slate-700">{o.notes}</p>

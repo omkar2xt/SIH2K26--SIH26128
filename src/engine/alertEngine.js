@@ -25,37 +25,8 @@ function buildAlertMessage(riskEval) {
  * Returns newly created alerts.
  */
 export function runAlertEngine(db) {
-  const newAlerts = [];
-
-  (db.animals || []).forEach(animal => {
-    const riskEval = runRuleEngine(animal, db);
-
-    // Only alert YELLOW and above
-    if (riskEval.healthRiskLevel === 'GREEN') return;
-
-    const severity = THRESHOLD_SEVERITY[riskEval.healthRiskLevel] || 'YELLOW';
-
-    // Check for existing OPEN alert at same or higher severity
-    const existing = (db.alerts || []).find(a =>
-      a.animalId === animal.id && a.status === 'OPEN' &&
-      (a.severity === severity || severityRank(a.severity) >= severityRank(severity))
-    );
-    if (existing) return;
-
-    const alert = store.insert('alerts', {
-      animalId:  animal.id,
-      severity,
-      message:   buildAlertMessage(riskEval),
-      createdAt: new Date().toISOString(),
-      status:    'OPEN',
-      source:    'alertEngine',
-      score:     riskEval.score,
-    });
-    store.audit('ALERT_AUTO_CREATED', alert.id, 'SYSTEM', `${severity} alert auto-generated for ${animal.id} (score=${riskEval.score})`);
-    newAlerts.push(alert);
-  });
-
-  return newAlerts;
+  // Disabled: Alert generation is now authoritative via backend (Step 2G)
+  return [];
 }
 
 function severityRank(s) {
@@ -64,18 +35,6 @@ function severityRank(s) {
 
 /** Escalate stale unacknowledged ORANGE/RED alerts older than 2 hours */
 export function escalateStaleAlerts(db) {
-  const escalated = [];
-  const twoHoursAgo = Date.now() - 2 * 3600 * 1000;
-  (db.alerts || []).forEach(al => {
-    if (al.status !== 'OPEN') return;
-    if (severityRank(al.severity) < severityRank('ORANGE')) return;
-    if (new Date(al.createdAt).getTime() > twoHoursAgo) return;
-    // Already critical — skip
-    if (al.severity === 'CRITICAL') return;
-    const newSev = al.severity === 'ORANGE' ? 'RED' : 'CRITICAL';
-    store.update('alerts', al.id, { severity: newSev, escalatedAt: new Date().toISOString() });
-    store.audit('ALERT_ESCALATED', al.id, 'SYSTEM', `Alert auto-escalated to ${newSev} (stale)`);
-    escalated.push(al.id);
-  });
-  return escalated;
+  // Disabled: Alert generation is now authoritative via backend (Step 2G)
+  return [];
 }

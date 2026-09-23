@@ -1,0 +1,114 @@
+[
+  {
+    "id": "SP_01",
+    "code": "SP_01",
+    "name": "Cattle",
+    "group": "Bovine",
+    "relevance": "High"
+  },
+  {
+    "id": "SP_02",
+    "code": "SP_02",
+    "name": "Buffalo",
+    "group": "Bovine",
+    "relevance": "High"
+  },
+  {
+    "id": "SP_03",
+    "code": "SP_03",
+    "name": "Goat",
+    "group": "Caprine",
+    "relevance": "High"
+  },
+  {
+    "id": "SP_04",
+    "code": "SP_04",
+    "name": "Sheep",
+    "group": "Ovine",
+    "relevance": "High"
+  },
+  {
+    "id": "SP_05",
+    "code": "SP_05",
+    "name": "Pig",
+    "group": "Porcine",
+    "relevance": "Medium"
+  },
+  {
+    "id": "SP_06",
+    "code": "SP_06",
+    "name": "Horse",
+    "group": "Equine",
+    "relevance": "Medium"
+  },
+  {
+    "id": "SP_07",
+    "code": "SP_07",
+    "name": "Donkey",
+    "group": "Equine",
+    "relevance": "Medium"
+  },
+  {
+    "id": "SP_08",
+    "code": "SP_08",
+    "name": "Pony",
+    "group": "Equine",
+    "relevance": "Low"
+  },
+  {
+    "id": "SP_09",
+    "code": "SP_09",
+    "name": "Mule",
+    "group": "Equine",
+    "relevance": "Low"
+  },
+  {
+    "id": "SP_10",
+    "code": "SP_10",
+    "name": "Camel",
+    "group": "Camelid",
+    "relevance": "Low"
+  },
+  {
+    "id": "SP_11",
+    "code": "SP_11",
+    "name": "Rabbit",
+    "group": "Lagomorph",
+    "relevance": "Low"
+  },
+  {
+    "id": "SP_12",
+    "code": "SP_12",
+    "name": "Chicken",
+    "group": "Poultry",
+    "relevance": "High"
+  },
+  {
+    "id": "SP_13",
+    "code": "SP_13",
+    "name": "Duck",
+    "group": "Poultry",
+    "relevance": "Medium"
+  },
+  {
+    "id": "SP_14",
+    "code": "SP_14",
+    "name": "Turkey",
+    "group": "Poultry",
+    "relevance": "Low"
+  },
+  {
+    "id": "SP_15",
+    "code": "SP_15",
+    "name": "Quail",
+    "group": "Poultry",
+    "relevance": "Low"
+  },
+  {
+    "id": "SP_16",
+    "code": "SP_16",
+    "name": "Other poultry",
+    "group": "Poultry",
+    "relevance": "Low"
+  }
+]

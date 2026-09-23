@@ -1,0 +1,142 @@
+[
+  {
+    "id": "BR_01",
+    "speciesId": "SP_01",
+    "name": "Khillar",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_02",
+    "speciesId": "SP_01",
+    "name": "Deoni",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_03",
+    "speciesId": "SP_01",
+    "name": "Dangi",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_04",
+    "speciesId": "SP_01",
+    "name": "Red Kandhari",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_05",
+    "speciesId": "SP_01",
+    "name": "Gaolao",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_06",
+    "speciesId": "SP_01",
+    "name": "Kathani",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_07",
+    "speciesId": "SP_01",
+    "name": "Konkan Kapila",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_08",
+    "speciesId": "SP_01",
+    "name": "Umarda",
+    "type": "Indigenous",
+    "accession": "INDIA_CATTLE_1100_UMARDA_03059"
+  },
+  {
+    "id": "BR_09",
+    "speciesId": "SP_02",
+    "name": "Pandharpuri",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_10",
+    "speciesId": "SP_02",
+    "name": "Nagpuri",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_11",
+    "speciesId": "SP_02",
+    "name": "Marathwadi",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_12",
+    "speciesId": "SP_02",
+    "name": "Purnathadi",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_13",
+    "speciesId": "SP_02",
+    "name": "Melghati",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_14",
+    "speciesId": "SP_03",
+    "name": "Osmanabadi",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_15",
+    "speciesId": "SP_03",
+    "name": "Sangamneri",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_16",
+    "speciesId": "SP_03",
+    "name": "Berari",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_17",
+    "speciesId": "SP_03",
+    "name": "Konkan Kanyal",
+    "type": "Indigenous",
+    "status": "Registered"
+  },
+  {
+    "id": "BR_18",
+    "speciesId": "SP_04",
+    "name": "Madgyal",
+    "type": "Indigenous",
+    "accession": "INDIA_SHEEP_1108_MADGYAL_14049"
+  },
+  {
+    "id": "BR_19",
+    "speciesId": "SP_04",
+    "name": "Deccani",
+    "type": "Indigenous",
+    "accession": "INDIA_SHEEP_0111_DECCANI_14021"
+  },
+  {
+    "id": "BR_20",
+    "speciesId": "SP_06",
+    "name": "Bhimthadi",
+    "type": "Indigenous",
+    "status": "Registered"
+  }
+]
