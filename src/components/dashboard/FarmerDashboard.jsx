@@ -85,8 +85,8 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
   const openAlerts = alerts.filter(a => a.status === 'OPEN').length;
 
   const today = new Date().toISOString().split('T')[0];
-  const overdueVacs = vaccinations
-    .filter(v => v.nextDueDate && v.nextDueDate < today && myAnimals.some(a => a.id === v.animalId));
+  const overdueVacs = (Array.isArray(vaccinations) ? vaccinations : [])
+    .filter(v => v.nextDueDate && v.nextDueDate < today && (Array.isArray(myAnimals) ? myAnimals : []).some(a => a.id === v.animalId));
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
