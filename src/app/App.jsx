@@ -150,10 +150,10 @@ export default function App() {
 
           {/* ── VET ───────────────────────────────────────────────── */}
           {page === 'cases' && (
-            <VetCaseWorkflow liveData={liveData} updateCaseStage={actions.updateCaseStage} actions={actions} />
+            <VetCaseWorkflow />
           )}
           {page === 'lab' && (
-            <LaboratoryModule liveData={liveData} addLabSample={actions.addLabSample} updateLabResult={actions.updateLabResult} />
+            <LaboratoryModule />
           )}
           {page === 'risk' && (
             <RiskMonitor liveData={liveData} setPage={navigate} />

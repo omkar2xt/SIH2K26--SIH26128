@@ -20,7 +20,7 @@ export function RiskBadge({ level, size = "sm" }) {
 }
 
 export function Card({ children, className = "" }) {
-  return <div className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+  return <div className={`rounded-xl border border-slate-200/60 bg-white/90 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300 ${className}`}>{children}</div>;
 }
 
 export function SectionTitle({ eyebrow, title, children }) {
@@ -46,15 +46,16 @@ export function StatCard({ label, value, icon: Icon, tone = "slate", sub }) {
     teal: "bg-teal-50 text-teal-800 border-teal-200",
   };
   return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between">
+    <Card className="p-5 overflow-hidden relative group">
+      <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full opacity-5 group-hover:scale-150 transition-transform duration-700 ${tones[tone].split(' ')[0].replace('50', '500')}`} />
+      <div className="flex items-center justify-between relative z-10">
         <div>
-          <div className="text-xs font-semibold text-slate-500">{label}</div>
-          <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
-          {sub && <div className="mt-0.5 text-xs font-semibold text-slate-400">{sub}</div>}
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">{label}</div>
+          <div className="mt-1 text-3xl font-black text-slate-900 tracking-tight">{value}</div>
+          {sub && <div className="mt-1 text-xs font-semibold text-slate-400">{sub}</div>}
         </div>
-        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg border ${tones[tone]}`}>
-          <Icon size={18} />
+        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl border shadow-sm transition-transform group-hover:-translate-y-1 ${tones[tone]}`}>
+          <Icon size={22} />
         </div>
       </div>
     </Card>

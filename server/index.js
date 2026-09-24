@@ -27,6 +27,8 @@ app.use(cors({
 app.use(express.json({ limit: '100kb' }));
 
 const apiRoutes = require('./src/routes/api.routes');
+const gisRoutes = require('./src/routes/gis.routes');
+const epidemiologyRoutes = require('./src/routes/epidemiology.routes');
 
 // Health, Readiness & Liveness
 app.get('/health', (req, res) => {
@@ -43,6 +45,8 @@ app.get('/liveness', (req, res) => {
 
 // Mount Production API Routes
 app.use('/api', apiRoutes);
+app.use('/api/gis', gisRoutes);
+app.use('/api/epidemiology', epidemiologyRoutes);
 
 // Global Error Handler (Hides Internal Details)
 app.use((err, req, res, next) => {

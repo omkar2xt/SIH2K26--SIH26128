@@ -43,7 +43,7 @@ export default function Topbar({ role, pageName, isRunning, toggleSimulation, op
           }`}
         >
           {isRunning ? <Square size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-          {isRunning ? "Stop Simulation" : "Start Live Simulation"}
+          {isRunning ? "Stop Simulation" : "Start Simulated Telemetry"}
         </button>
 
         <div className="h-6 w-px bg-slate-200"></div>

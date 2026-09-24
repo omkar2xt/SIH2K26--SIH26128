@@ -154,7 +154,7 @@ export default function DiseaseKnowledgeBase({ liveData }) {
                       </div>
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Cpu size={13} />IoT / Sensor Signals</h4>
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-1.5"><Cpu size={13} />Simulated Telemetry Signals</h4>
                       <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
                         <div className="text-xs text-blue-800 font-medium">{d.iotSignals || 'Not established in consulted source.'}</div>
                         <div className="text-[10px] text-blue-600 mt-1">Detectability: {d.iotDetectabilityClass || '—'}</div>

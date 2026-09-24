@@ -77,6 +77,12 @@ async function main() {
     create: { username: 'dr_kulkarni', fullName: 'Dr. A. Kulkarni', email: 'vet.kulkarni@pashuraksha.gov.in', roleId: roles['VETERINARIAN'].id, passwordHash: devPasswordHash },
   });
 
+  const farmerUser = await prisma.user.upsert({
+    where: { username: 'test_farmer_a' },
+    update: { passwordHash: devPasswordHash },
+    create: { username: 'test_farmer_a', fullName: 'R. Deshmukh', email: 'farmer@pashuraksha.gov.in', roleId: roles['FARMER'].id, passwordHash: devPasswordHash },
+  });
+
   // 5. Species (SP_01 to SP_16)
   const speciesData = [
     { code: "SP_01", name: "Cattle", speciesGroup: "Bovine", maharashtraRelevance: "High" },
@@ -186,6 +192,7 @@ async function main() {
       name: 'Deshmukh Dairy & Cattle Farm',
       districtId: defaultDistrict.id,
       tenantId: tenant.id,
+      ownerId: farmerUser.id,
       latitude: 18.5204,
       longitude: 73.8567,
       address: 'Haveli Taluka, Pune, Maharashtra',

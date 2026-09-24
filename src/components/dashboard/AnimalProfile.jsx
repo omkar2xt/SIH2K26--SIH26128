@@ -155,14 +155,19 @@ export default function AnimalProfile({ liveData, setPage, animalId, actions, ro
     };
     
     const res = await api.observations.create(data);
-    if (res.success) {
+    if (res.offline) {
+      setObsForm({ symptoms: [], notes: '', severity: 'Mild' });
+      setShowObsForm(false);
+      setSaved('Saved locally — waiting for sync');
+      setTimeout(() => setSaved(''), 2500);
+    } else if (res.success) {
       // Re-fetch to update profile
       const updatedAnimal = await api.animals.getById(animal.id);
       if (updatedAnimal.success) setBackendAnimal(updatedAnimal.data);
       
       setObsForm({ symptoms: [], notes: '', severity: 'Mild' });
       setShowObsForm(false);
-      setSaved('Observation saved to backend!');
+      setSaved('Synced successfully');
       setTimeout(() => setSaved(''), 2500);
     } else {
       console.error(res.error);

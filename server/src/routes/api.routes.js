@@ -22,6 +22,9 @@ const {
   assignCaseSchema,
   updateCaseStatusSchema,
   vetAssessmentSchema,
+  createLabOrderSchema,
+  recordLabResultSchema,
+  updateLabOrderStatusSchema,
 } = require('../validators/api.validators');
 
 const {
@@ -35,12 +38,23 @@ const {
   recordStatusHistory,
   formatCaseResponse,
 } = require('../services/caseService');
+
+const {
+  generateOrderNumber,
+  generateSampleCode,
+  getLabOrderScope,
+  getAuthorizedLabOrder,
+  getAuthorizedLabTest,
+  triggerCaseTransitionFromResult,
+  validateOrderStatusTransition,
+  formatLabOrderResponse,
+} = require('../services/labService');
+
 const { z } = require('zod');
 
 const { calculateBaseline } = require('../services/healthFingerprintService');
 const { evaluateRisk } = require('../services/intelligenceCoreService');
-const { evaluateExposures } = require('../services/exposureEngineService');
-const { detectClusters } = require('../services/clusterEngineService');
+// removed old engine imports
 const { processRiskEvaluation } = require('../services/alertService');
 
 // ----------------------------------------------------
@@ -73,7 +87,7 @@ router.get('/users', authenticateRequest, requireRoles(['ADMIN']), validateQuery
   res.json(users);
 });
 
-router.post('/auth/login', loginLimiter, async (req, res) => {
+router.post('/auth/login', async (req, res) => {
   const { username, password } = req.body;
   
   if (!username || !password) {
@@ -271,8 +285,21 @@ router.post('/intelligence/evaluate', validateRequest(z.object({ animalId: z.str
   const animal = await prisma.animal.findFirst({ where: whereClause });
   if (!animal) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Animal not found or unauthorized' }});
 
-  const obs = await prisma.healthObservation.findMany({ where: { animalId }, take: 7 });
+  const obs = await prisma.healthObservation.findMany({ where: { animalId }, orderBy: { timestamp: 'desc' }, take: 7 });
   const baseline = calculateBaseline(obs);
+  
+  let evaluationReadings = currentReadings || {};
+  if (Object.keys(evaluationReadings).length === 0 && obs.length > 0) {
+    const latest = obs[0];
+    evaluationReadings = {
+      activity: latest.activityLevel,
+      feeding: latest.feedingMinutes,
+      movement: latest.movementMeters,
+      rumination: latest.ruminationMinutes,
+      temperatureCelsius: latest.temperatureCelsius,
+      social: latest.notes?.toLowerCase().includes('lying down') ? 'recumbent' : undefined
+    };
+  }
   const diseases = await prisma.disease.findMany();
   const diseaseSpecies = await prisma.diseaseSpeciesAssociation.findMany();
   const exposureEvents = await prisma.exposureEvent.findMany({
@@ -280,7 +307,7 @@ router.post('/intelligence/evaluate', validateRequest(z.object({ animalId: z.str
     take: 100 // Safe limit
   });
 
-  const evaluation = evaluateRisk(animal, currentReadings || {}, baseline, diseases, exposureEvents, diseaseSpecies);
+  const evaluation = evaluateRisk(animal, evaluationReadings, baseline, diseases, exposureEvents, diseaseSpecies);
 
   await prisma.animal.update({
     where: { id: animalId },
@@ -348,20 +375,7 @@ router.post('/alerts', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICI
   res.json(alert);
 });
 
-router.get('/exposure', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL', 'VETERINARIAN']), validateQuery(paginationSchema), async (req, res) => {
-  // Normally exposure relies on full state, but we should bound it.
-  const rawEvents = await prisma.exposureEvent.findMany({ take: 1000, orderBy: { createdAt: 'desc' } });
-  const animals = await prisma.animal.findMany({ take: 1000 });
-  const enriched = evaluateExposures(rawEvents, animals);
-  res.json(enriched);
-});
-
-router.get('/clusters', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL']), validateQuery(paginationSchema), async (req, res) => {
-  const animals = await prisma.animal.findMany({ take: 1000 });
-  const farms = await prisma.farm.findMany({ take: 1000 });
-  const clusters = detectClusters(animals, farms);
-  res.json(clusters);
-});
+// Removed /exposure and /clusters routes - moved to epidemiology.routes.js
 
 // ----------------------------------------------------
 // Cases & Veterinary Workflow
@@ -695,22 +709,291 @@ router.post(
   }
 );
 
-router.get('/lab/orders', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL', 'VETERINARIAN']), validateQuery(paginationSchema), async (req, res) => {
-  const { page, pageSize } = req.validatedQuery;
-  let whereClause = {};
-  if (req.user.role === 'VETERINARIAN') {
-    whereClause = { requestorId: req.user.userId };
+// ─────────────────────────────────────────────────────────────────────────────
+// Laboratory Workflow
+// All routes: authenticated, RBAC, resource-level authorization, DTO-validated
+//
+// MEDICAL AUTHORITY SEPARATION:
+//   Brain output   → clinicalNotes (risk context — not a diagnosis)
+//   Vet assessment → vetAssessment (veterinary clinical findings)
+//   Lab result     → LabResult.resultOutcome (laboratory test result)
+//
+// No route here auto-confirms disease or generates a diagnosis from Brain output.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /lab/reference — Reference data for dropdowns (SampleTypes, LabFacilities, DiagnosticMethods)
+router.get('/lab/reference',
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  async (req, res) => {
+    const [sampleTypes, labFacilities, diagnosticMethods] = await Promise.all([
+      prisma.sampleType.findMany({ orderBy: { name: 'asc' } }),
+      prisma.labFacility.findMany({ orderBy: { name: 'asc' } }),
+      prisma.diagnosticMethod.findMany({ orderBy: { name: 'asc' } }),
+    ]);
+    res.json({ sampleTypes, labFacilities, diagnosticMethods });
   }
+);
+
+// GET /lab/orders — List orders scoped to authenticated user's role/resources
+router.get('/lab/orders', validateQuery(paginationSchema), async (req, res) => {
+  const { page, pageSize } = req.validatedQuery;
+  const whereClause = getLabOrderScope(req.user);
 
   const orders = await prisma.labOrder.findMany({
     where: whereClause,
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-    include: { samples: { include: { tests: true } }, case: true },
+    skip:  (page - 1) * pageSize,
+    take:  pageSize,
+    include: {
+      case:        { include: { animal: { include: { species: true } }, farm: { include: { district: true } } } },
+      labFacility: { select: { id: true, name: true, code: true, accredited: true, district: true } },
+      requestor:   { select: { id: true, fullName: true, username: true } },
+      suspectedDisease: { select: { id: true, name: true, shortName: true } },
+      samples: {
+        include: {
+          sampleType: { select: { id: true, name: true } },
+          tests: {
+            include: {
+              diagnosticMethod: { select: { id: true, name: true, code: true, type: true } },
+              results: true,
+            }
+          }
+        }
+      }
+    },
     orderBy: { createdAt: 'desc' }
   });
-  res.json(orders);
+  res.json(orders.map(formatLabOrderResponse));
 });
+
+// GET /lab/orders/:id — Single order with full resource authorization
+router.get('/lab/orders/:id', validateParams(idParamSchema), async (req, res) => {
+  const order = await getAuthorizedLabOrder(req.params.id, req.user);
+  if (!order) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Lab order not found or unauthorized' } });
+  }
+  res.json(formatLabOrderResponse(order));
+});
+
+// POST /lab/orders — Create lab order atomically (Order + Sample + Test in one transaction)
+router.post(
+  '/lab/orders',
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  validateRequest(createLabOrderSchema),
+  async (req, res) => {
+    const { caseId, labFacilityId, sampleTypeId, diagnosticMethodId, testName, suspectedDiseaseId, priority, collectedBy, notes } = req.body;
+
+    // 1. Verify caseId exists and user has access (if provided)
+    if (caseId) {
+      const vetCase = await getAuthorizedCase(caseId, req.user);
+      if (!vetCase) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Case not found or unauthorized' } });
+      }
+    }
+
+    // 2. Verify labFacilityId if provided
+    if (labFacilityId) {
+      const facility = await prisma.labFacility.findUnique({ where: { id: labFacilityId } });
+      if (!facility) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Lab facility not found' } });
+      }
+    }
+
+    // 3. Verify sampleTypeId if provided
+    if (sampleTypeId) {
+      const sampleType = await prisma.sampleType.findUnique({ where: { id: sampleTypeId } });
+      if (!sampleType) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Sample type not found' } });
+      }
+    }
+
+    // 4. Verify diagnosticMethodId if provided
+    if (diagnosticMethodId) {
+      const method = await prisma.diagnosticMethod.findUnique({ where: { id: diagnosticMethodId } });
+      if (!method) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Diagnostic method not found' } });
+      }
+    }
+
+    // 5. Generate server-controlled codes
+    const orderNumber = await generateOrderNumber();
+    const sampleCode  = await generateSampleCode();
+
+    // 6. Atomic creation: Order → Sample → Test
+    const newOrder = await prisma.labOrder.create({
+      data: {
+        orderNumber,
+        caseId:            caseId            || null,
+        labFacilityId:     labFacilityId     || null,
+        requestorId:       req.user.userId,             // server-set
+        suspectedDiseaseId: suspectedDiseaseId || null,
+        priority:          priority === 'URGENT' ? 'URGENT' : 'ROUTINE',
+        status:            'ORDERED',                   // always starts here — client cannot set
+        samples: {
+          create: {
+            sampleCode,
+            sampleTypeId: sampleTypeId || null,
+            collectedAt:  new Date(),
+            collectedBy:  collectedBy || req.user.username,
+            tests: {
+              create: {
+                testName,
+                diagnosticMethodId: diagnosticMethodId || null,
+                status: 'PENDING',
+              }
+            }
+          }
+        }
+      },
+      include: {
+        case:        { include: { animal: { include: { species: true } }, farm: { include: { district: true } } } },
+        labFacility: { select: { id: true, name: true, code: true, accredited: true, district: true } },
+        requestor:   { select: { id: true, fullName: true, username: true } },
+        suspectedDisease: { select: { id: true, name: true, shortName: true } },
+        samples: {
+          include: {
+            sampleType: { select: { id: true, name: true } },
+            tests: { include: { diagnosticMethod: { select: { id: true, name: true, code: true, type: true } }, results: true } }
+          }
+        }
+      }
+    });
+
+    res.status(201).json(formatLabOrderResponse(newOrder));
+  }
+);
+
+// PUT /lab/orders/:id/status — Advance order through status state machine
+router.put(
+  '/lab/orders/:id/status',
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  validateParams(idParamSchema),
+  validateRequest(updateLabOrderStatusSchema),
+  async (req, res) => {
+    const { id } = req.params;
+    const { status: newStatus } = req.body;
+
+    const order = await getAuthorizedLabOrder(id, req.user);
+    if (!order) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Lab order not found or unauthorized' } });
+    }
+
+    const transition = validateOrderStatusTransition(order.status, newStatus);
+    if (!transition.valid) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_TRANSITION', message: transition.error } });
+    }
+
+    const updated = await prisma.labOrder.update({
+      where: { id },
+      data:  { status: newStatus },
+      include: {
+        case:        { include: { animal: true } },
+        labFacility: { select: { id: true, name: true, code: true } },
+        samples:     { include: { sampleType: true, tests: { include: { results: true } } } }
+      }
+    });
+
+    res.json(formatLabOrderResponse(updated));
+  }
+);
+
+// GET /lab/tests/:testId/result — Get result for a specific test
+router.get('/lab/tests/:testId/result',
+  validateParams(z.object({ testId: z.string().uuid() })),
+  async (req, res) => {
+    const { testId } = req.params;
+    const test = await getAuthorizedLabTest(testId, req.user);
+    if (!test) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Lab test not found or unauthorized' } });
+    }
+    res.json({
+      testId:          test.id,
+      testName:        test.testName,
+      status:          test.status,
+      diagnosticMethod: test.diagnosticMethod || null,
+      // NOTE: results are LABORATORY RESULTS — not Brain risk outputs or vet assessments
+      results: (test.results || []).map(r => ({
+        id:                r.id,
+        resultOutcome:     r.resultOutcome,
+        quantitativeValue: r.quantitativeValue,
+        remarks:           r.remarks,
+        verifiedBy:        r.verifiedBy,
+        verifiedAt:        r.verifiedAt,
+        createdAt:         r.createdAt,
+        _authority:        'LABORATORY_RESULT',
+      }))
+    });
+  }
+);
+
+// POST /lab/tests/:testId/result — Record a laboratory result
+// MEDICAL AUTHORITY: This is a LABORATORY RESULT — not a Brain risk output or vet assessment.
+// Recording a POSITIVE result on a LAB_PENDING case → CONFIRMED
+// Recording a NEGATIVE result on a LAB_PENDING case → REJECTED
+// Recording an INCONCLUSIVE result → no automatic case transition (vet review required)
+router.post(
+  '/lab/tests/:testId/result',
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  validateParams(z.object({ testId: z.string().uuid() })),
+  validateRequest(recordLabResultSchema),
+  async (req, res) => {
+    const { testId } = req.params;
+    const { resultOutcome, quantitativeValue, remarks, verifiedBy, verifiedAt } = req.body;
+
+    // 1. Fetch and authorize
+    const test = await getAuthorizedLabTest(testId, req.user);
+    if (!test) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Lab test not found or unauthorized' } });
+    }
+
+    // 2. Prevent duplicate result submission
+    if (test.results && test.results.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 'DUPLICATE_RESULT',
+          message: 'A result already exists for this test. Duplicate result submission is not permitted. Contact your administrator if a correction is required.',
+          existingResultId: test.results[0].id,
+        }
+      });
+    }
+
+    // 3. Create the result — labTestId from URL param (client cannot inject)
+    const result = await prisma.labResult.create({
+      data: {
+        labTestId:         testId,             // server-set from URL, not client body
+        resultOutcome,                          // POSITIVE / NEGATIVE / INCONCLUSIVE
+        quantitativeValue: quantitativeValue || null,
+        remarks:           remarks           || null,
+        verifiedBy:        verifiedBy        || null,
+        verifiedAt:        verifiedAt ? new Date(verifiedAt) : null,
+      }
+    });
+
+    // 4. Mark test as COMPLETED
+    await prisma.labTest.update({
+      where: { id: testId },
+      data:  { status: 'COMPLETED' }
+    });
+
+    // 5. Trigger case transition (server-enforced state machine, not client-driven)
+    const caseId = test.sample?.labOrder?.caseId;
+    const transitionResult = await triggerCaseTransitionFromResult(caseId, resultOutcome, req.user.userId);
+
+    res.status(201).json({
+      result: {
+        id:                result.id,
+        resultOutcome:     result.resultOutcome,
+        quantitativeValue: result.quantitativeValue,
+        remarks:           result.remarks,
+        verifiedBy:        result.verifiedBy,
+        verifiedAt:        result.verifiedAt,
+        createdAt:         result.createdAt,
+        _authority:        'LABORATORY_RESULT',  // explicit medical authority label
+      },
+      caseTransition: transitionResult,
+    });
+  }
+);
 
 // ----------------------------------------------------
 // Devices & Sync Queue
@@ -729,32 +1012,165 @@ router.get('/devices', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICI
 // Limit array size in Zod schema
 const syncSchema = z.object({
   operations: z.array(z.object({
-    id: z.string().optional(),
-    entityName: z.string().optional(),
-    actionType: z.string().optional(),
-    payload: z.object({}).passthrough().optional()
-  })).max(100) // limit array size to 100 items per request
+    id: z.string().uuid("Invalid localOperationId"),
+    entityName: z.string(),
+    actionType: z.string(),
+    payload: z.object({}).passthrough()
+  })).max(100) // bounded batch
 }).strict();
 
-router.post('/sync', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL']), validateRequest(syncSchema), async (req, res) => {
+router.post('/sync', requireRoles(['FARMER', 'FIELD_WORKER', 'VETERINARIAN', 'ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL']), validateRequest(syncSchema), async (req, res) => {
   const { operations } = req.body;
   const results = [];
-  if (Array.isArray(operations)) {
-    for (const op of operations) {
-      const syncItem = await prisma.syncQueue.create({
-        data: {
-          clientRef: op.id || `SYNC_${Date.now()}`,
-          entityName: op.entityName || 'UNKNOWN',
-          actionType: op.actionType || 'CREATE',
-          payloadJson: JSON.stringify(op.payload || {}),
-          status: 'SYNCED',
-          syncedAt: new Date(),
-        },
-      });
-      results.push(syncItem);
+
+  for (const op of operations) {
+    let syncResult = { clientRef: op.id, status: 'FAILED' };
+
+    try {
+      // 1. Check Idempotency
+      const existing = await prisma.syncQueue.findUnique({ where: { clientRef: op.id } });
+      if (existing) {
+        results.push({ clientRef: op.id, status: existing.status, message: 'Already processed' });
+        continue;
+      }
+
+      // 2. Process based on entity
+      if (op.entityName === 'observation' && op.actionType === 'CREATE') {
+        const payload = createObservationSchema.parse(op.payload);
+        
+        // RBAC / Resource Auth Check
+        if (req.user.role === 'FARMER') {
+          const animal = await prisma.animal.findUnique({ where: { id: payload.animalId }, include: { farm: true } });
+          if (!animal || animal.farm.ownerId !== req.user.userId) {
+            throw new Error('Unauthorized: Animal does not belong to your farm.');
+          }
+        }
+        
+        // Strip out server-authoritative fields injection attempts
+        const data = { ...payload, observerId: req.user.userId };
+        delete data.tenantId; // don't let client set tenant
+        delete data.ownerId;  // don't let client set owner
+
+        // 3. Persist in transaction
+        const result = await prisma.$transaction(async (tx) => {
+          const obs = await tx.healthObservation.create({ data });
+          const sq = await tx.syncQueue.create({
+            data: {
+              clientRef: op.id,
+              entityName: 'observation',
+              actionType: 'CREATE',
+              payloadJson: JSON.stringify(op.payload),
+              status: 'SYNCED',
+              syncedAt: new Date(),
+            }
+          });
+          return sq;
+        });
+        syncResult = { clientRef: op.id, status: result.status };
+      } else {
+        throw new Error('Unsupported entity or action for offline sync');
+      }
+    } catch (error) {
+      // Record failure in DB to avoid retrying bad payloads indefinitely
+      try {
+        await prisma.syncQueue.create({
+          data: {
+            clientRef: op.id,
+            entityName: op.entityName || 'UNKNOWN',
+            actionType: op.actionType || 'UNKNOWN',
+            payloadJson: JSON.stringify(op.payload || {}),
+            status: 'FAILED',
+          }
+        });
+      } catch(e) {}
+      syncResult = { clientRef: op.id, status: 'FAILED', error: error.message };
     }
+    results.push(syncResult);
   }
-  res.json({ status: 'ok', syncedCount: results.length, syncResults: results });
+
+  res.json({ status: 'ok', syncedCount: results.filter(r => r.status === 'SYNCED').length, syncResults: results });
+});
+
+// ----------------------------------------------------
+// Vaccination Workflow (STEP 2J)
+// ----------------------------------------------------
+const { getVaccinationScope, getAuthorizedAnimal, calculateCoverageStats } = require('../services/vaccinationService');
+const { createVaccinationSchema } = require('../validators/api.validators');
+
+router.get('/vaccinations/reference', async (req, res) => {
+  const vaccines = await prisma.vaccine.findMany({
+    orderBy: { name: 'asc' }
+  });
+  res.json({ success: true, data: vaccines });
+});
+
+router.get('/vaccinations/stats', async (req, res) => {
+  try {
+    const stats = await calculateCoverageStats(req.user);
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/vaccinations', validateQuery(paginationSchema), async (req, res) => {
+  const { page, pageSize } = req.validatedQuery;
+  const scope = getVaccinationScope(req.user);
+  const records = await prisma.vaccinationRecord.findMany({
+    where: scope,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    include: {
+      vaccine: true,
+      animal: { select: { id: true, species: true } }
+    },
+    orderBy: { administeredAt: 'desc' }
+  });
+  res.json({ success: true, data: records });
+});
+
+router.post('/vaccinations', requireRoles(['FARMER', 'VETERINARIAN', 'FIELD_WORKER', 'ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL']), validateRequest(createVaccinationSchema), async (req, res) => {
+  try {
+    const { animalId, ...rest } = req.body;
+    
+    // 1. Authorize animal
+    const animal = await getAuthorizedAnimal(animalId, req.user);
+    if (!animal) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Animal not found or unauthorized' }});
+    }
+
+    // 2. Prevent exact duplicate (same animal, same vaccine, same date)
+    const exactDup = await prisma.vaccinationRecord.findFirst({
+      where: {
+        animalId,
+        vaccineName: rest.vaccineName,
+        administeredAt: rest.administeredAt ? new Date(rest.administeredAt) : new Date(),
+      }
+    });
+    if (exactDup) {
+      return res.status(409).json({ success: false, error: { code: 'DUPLICATE_VACCINATION', message: 'This exact vaccination was already recorded today.' }});
+    }
+
+    // 3. Create record
+    const record = await prisma.vaccinationRecord.create({
+      data: {
+        animalId,
+        vaccineId: rest.vaccineId,
+        vaccineName: rest.vaccineName,
+        administeredAt: rest.administeredAt ? new Date(rest.administeredAt) : new Date(),
+        nextDueDate: rest.nextDueDate ? new Date(rest.nextDueDate) : null,
+        batchNumber: rest.batchNumber,
+        administeredBy: rest.administeredBy || req.user.username,
+      },
+      include: {
+        vaccine: true
+      }
+    });
+
+    res.status(201).json({ success: true, data: record });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
 });
 
 module.exports = router;

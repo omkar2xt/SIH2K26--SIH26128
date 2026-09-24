@@ -152,7 +152,86 @@ const vetAssessmentSchema = z.object({
   suspectedDiseaseId: z.string().uuid().optional(), // vet may refine the suspected disease
 }).strict();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Laboratory Schemas — Mass-Assignment Protection
+// All server-controlled fields are deliberately excluded:
+//   id, orderNumber, sampleCode, status, requestorId, createdAt, updatedAt,
+//   caseStatus, confirmed, tenantId, ownerId, labTestId
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /lab/orders — Create a lab order (atomically creates Order + Sample + Test).
+ * Client may specify: case link, facility, sample type, test method, priority, disease.
+ * Server controls: orderNumber, sampleCode, status, requestorId, createdAt.
+ * CRITICAL: No field here may set case status or confirm a disease.
+ */
+const createLabOrderSchema = z.object({
+  caseId:             z.string().uuid().optional(),
+  labFacilityId:      z.string().uuid().optional(),
+  sampleTypeId:       z.string().uuid().optional(),
+  diagnosticMethodId: z.string().uuid().optional(),
+  testName:           z.string().min(1).max(200),          // e.g. "RT-PCR"
+  suspectedDiseaseId: z.string().uuid().optional(),
+  priority:           z.enum(['ROUTINE', 'URGENT']).optional(),
+  collectedBy:        z.string().max(200).optional(),       // field collector name/ID
+  notes:              z.string().max(2000).optional(),
+}).strict();
+
+/**
+ * POST /lab/tests/:testId/result — Record a laboratory test result.
+ * Client may specify: resultOutcome, quantitativeValue, remarks, verifiedBy.
+ * Server controls: id, labTestId (from URL param), createdAt.
+ * CRITICAL: Does NOT accept caseId, animalId, confirmed, caseStatus, tenantId.
+ * This is a LABORATORY RESULT — not a Brain risk output or veterinary assessment.
+ */
+const RESULT_OUTCOME_ENUM = z.enum(['POSITIVE', 'NEGATIVE', 'INCONCLUSIVE']);
+
+const recordLabResultSchema = z.object({
+  resultOutcome:     RESULT_OUTCOME_ENUM,
+  quantitativeValue: z.string().max(500).optional(),   // e.g. "Ct value: 28.5"
+  remarks:           z.string().max(4000).optional(),  // lab technician notes
+  verifiedBy:        z.string().max(200).optional(),   // name/ID of verifying authority
+  verifiedAt:        z.string().datetime().optional(), // ISO timestamp of verification
+}).strict();
+
+/**
+ * PUT /lab/orders/:id/status — Advance order status along state machine.
+ * Server enforces valid transitions (ORDERED→SAMPLE_COLLECTED→...→COMPLETED).
+ * Client may supply only the new status.
+ */
+const LAB_ORDER_STATUS_ENUM = z.enum([
+  'ORDERED', 'SAMPLE_COLLECTED', 'IN_TRANSIT', 'RECEIVED', 'TESTING', 'COMPLETED'
+]);
+
+const updateLabOrderStatusSchema = z.object({
+  status: LAB_ORDER_STATUS_ENUM,
+}).strict();
+
+/**
+ * POST /vaccinations — Create a vaccination record.
+ * Client may specify: animalId, vaccineId, vaccineName, date, nextDue, batchNo, administeredBy, notes.
+ * Server controls: id, createdBy, createdAt, updatedAt, tenantId, etc.
+ * CRITICAL: This is a preventive health record, it does not confirm immunity or change Brain risk.
+ */
+const createVaccinationSchema = z.object({
+  animalId:       z.string().uuid(),
+  vaccineId:      z.string().uuid().optional(),
+  vaccineName:    z.string().min(1).max(200),
+  administeredAt: z.string().datetime().optional(), // ISO string, defaults to now if omitted
+  nextDueDate:    z.string().datetime().optional(),
+  batchNumber:    z.string().max(100).optional(),
+  administeredBy: z.string().max(200).optional(),
+  notes:          z.string().max(2000).optional(),
+}).strict();
+
+const verifyClusterSchema = z.object({
+  status: z.enum(['POTENTIAL_CLUSTER', 'CONFIRMED_OUTBREAK', 'CONTAINED']),
+  description: z.string().optional(),
+  containmentRadiusKm: z.number().min(0).max(50).optional(),
+}).strict();
+
 module.exports = {
+  verifyClusterSchema,
   validateRequest,
   validateQuery,
   validateParams,
@@ -168,4 +247,11 @@ module.exports = {
   updateCaseStatusSchema,
   vetAssessmentSchema,
   CASE_STATUS_ENUM,
+  createLabOrderSchema,
+  recordLabResultSchema,
+  updateLabOrderStatusSchema,
+  RESULT_OUTCOME_ENUM,
+  LAB_ORDER_STATUS_ENUM,
+  createVaccinationSchema,
 };
+

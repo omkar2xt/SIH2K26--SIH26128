@@ -6,6 +6,7 @@ import { api } from '../../services/api/api';
 export default function FarmerDashboard({ liveData, fieldMode, setPage, role, actions }) {
   const [animals, setAnimals] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [vaccinations, setVaccinations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -14,9 +15,10 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
       setLoading(true);
       setError(null);
       try {
-        const [animRes, alertRes] = await Promise.all([
+        const [animRes, alertRes, vaxRes] = await Promise.all([
           api.animals.getAll(),
-          api.alerts.getAll()
+          api.alerts.getAll(),
+          api.vaccination.getRecords()
         ]);
         if (animRes.success) {
           setAnimals(animRes.data);
@@ -28,6 +30,12 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
           setAlerts(alertRes);
         } else {
           setAlerts([]);
+        }
+
+        if (vaxRes.success) {
+          setVaccinations(vaxRes.data);
+        } else {
+          setVaccinations([]);
         }
       } catch (err) {
         setError('Failed to connect to authoritative backend');
@@ -77,8 +85,8 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
   const openAlerts = alerts.filter(a => a.status === 'OPEN').length;
 
   const today = new Date().toISOString().split('T')[0];
-  const overdueVacs = (liveData.vaccinations || [])
-    .filter(v => v.nextDue && v.nextDue < today && myAnimals.some(a => a.id === v.animalId));
+  const overdueVacs = vaccinations
+    .filter(v => v.nextDueDate && v.nextDueDate < today && myAnimals.some(a => a.id === v.animalId));
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -136,10 +144,10 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
             {overdueVacs.length === 0 ? (
               <div className="text-center py-3 text-emerald-700 text-xs font-semibold">✓ All vaccinations current</div>
             ) : overdueVacs.slice(0,4).map(v => {
-              const disease = (liveData.diseases || []).find(d => d.id === v.diseaseId);
+              const diseaseName = v.vaccine?.name || v.vaccineName || v.diseaseId;
               return (
                 <div key={v.id} className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 border border-amber-100">
-                  <span className="text-amber-900 font-medium text-xs">{disease?.shortName || v.diseaseId} — {v.animalId}</span>
+                  <span className="text-amber-900 font-medium text-xs">{diseaseName} — {v.animalId}</span>
                   <span className="text-[10px] font-bold text-red-700">Overdue</span>
                 </div>
               );
@@ -158,7 +166,7 @@ export default function FarmerDashboard({ liveData, fieldMode, setPage, role, ac
           { label: 'My Alerts',           page: 'alerts', icon: Bell, color: 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100' },
         ].map(q => (
           <button key={q.page} onClick={() => setPage?.(q.page)}
-            className={`flex flex-col items-center gap-2 rounded-xl border p-4 text-sm font-semibold transition-colors ${q.color}`}>
+            className={`flex flex-col items-center gap-2 rounded-xl border p-4 text-sm font-semibold transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${q.color}`}>
             <q.icon size={20} />
             {q.label}
           </button>

@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-export default function MaharashtraMap({ liveData }) {
+export default function MaharashtraMap({ liveData, onDistrictClick }) {
   const [geoData, setGeoData] = useState(null);
 
   useEffect(() => {
@@ -51,6 +51,13 @@ export default function MaharashtraMap({ liveData }) {
     if (feature.properties) {
       const name = feature.properties.dtname || feature.properties.district || feature.properties.DISTRICT || "Unknown District";
       layer.bindPopup(`<b>${name}</b>`);
+      layer.on({
+        click: () => {
+          if (typeof onDistrictClick === 'function') {
+            onDistrictClick(name);
+          }
+        }
+      });
     }
   };
 
@@ -122,8 +129,8 @@ export default function MaharashtraMap({ liveData }) {
       <div className="absolute top-4 right-4 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg border border-slate-200 z-[1000] text-sm pointer-events-auto">
         <div className="font-bold text-slate-800 mb-2 border-b pb-1">Risk Legend</div>
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#dc2626]"></span> Veterinary Alert (Red)</div>
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#ea580c]"></span> Field Verification (Orange)</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#dc2626]"></span> Veterinary investigation recommended (Red)</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#ea580c]"></span> Official verification required (Orange)</div>
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#d97706]"></span> Monitor (Yellow)</div>
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#059669]"></span> Normal (Green)</div>
         </div>

@@ -1,281 +1,500 @@
-import React, { useState, useMemo } from 'react';
-import { CheckCircle2, XCircle, ChevronRight, ClipboardList, FlaskConical, Plus, AlertTriangle, Info } from 'lucide-react';
+/**
+ * VetCaseWorkflow — Backend-Authoritative (Step 2H)
+ *
+ * All case data is fetched from the authenticated backend.
+ * NO fallback to localStorage, liveData, or demoDB.
+ * If backend is unavailable, an error is shown (not fake data).
+ *
+ * Backend status → UI label mapping:
+ *   SUSPECTED    → "Potential Risk"
+ *   INVESTIGATING → "Under Review"
+ *   LAB_PENDING  → "Sample Required"
+ *   CONFIRMED    → "Confirmed"
+ *   REJECTED     → "Not Confirmed"
+ *   RESOLVED     → "Closed"
+ *
+ * Medical authority: vetAssessment is a veterinary assessment, NOT a diagnosis.
+ * clinicalNotes are system risk context, NOT a confirmed disease.
+ */
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  CheckCircle2, XCircle, ClipboardList, Info, AlertTriangle,
+  RefreshCw, Loader2, FlaskConical, Stethoscope, ChevronRight
+} from 'lucide-react';
 import { Card, SectionTitle, RiskBadge } from '../common/UIComponents';
-import { CASE_STAGES } from '../../services/caseService';
+import { api } from '../../services/api/api.js';
 
-const inputCls = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100";
+const inputCls = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100';
 
-const STAGE_COLORS = {
-  'New Alert':          'bg-red-100 text-red-800 border-red-200',
-  'Accepted':           'bg-amber-100 text-amber-800 border-amber-200',
-  'Field Review':       'bg-orange-100 text-orange-800 border-orange-200',
-  'Sample Collected':   'bg-blue-100 text-blue-800 border-blue-200',
-  'Lab Submitted':      'bg-purple-100 text-purple-800 border-purple-200',
-  'Lab Result':         'bg-indigo-100 text-indigo-800 border-indigo-200',
-  'Confirmed / Rejected': 'bg-rose-100 text-rose-800 border-rose-200',
-  'Action':             'bg-teal-100 text-teal-800 border-teal-200',
-  'Follow-up':          'bg-emerald-100 text-emerald-800 border-emerald-200',
-  'Closed':             'bg-slate-100 text-slate-600 border-slate-200',
+// Backend statuses in display order
+const BACKEND_STATUSES = ['SUSPECTED', 'INVESTIGATING', 'LAB_PENDING', 'CONFIRMED', 'REJECTED', 'RESOLVED'];
+
+const STATUS_LABELS = {
+  SUSPECTED:     'Potential Risk',
+  INVESTIGATING: 'Under Review',
+  LAB_PENDING:   'Sample Required',
+  CONFIRMED:     'Confirmed',
+  REJECTED:      'Not Confirmed',
+  RESOLVED:      'Closed',
 };
 
-export default function VetCaseWorkflow({ liveData, updateCaseStage, actions }) {
-  const [selected, setSelected] = useState(null);
-  const [filterStage, setFilterStage] = useState('');
-  const [obsText, setObsText] = useState('');
-  const [sampleForm, setSampleForm] = useState({ sampleType: 'Blood / Serum', laboratory: '', test: 'RT-PCR' });
-  const [labResultForm, setLabResultForm] = useState({ result: 'Pending', notes: '' });
-  const [actionNote, setActionNote] = useState('');
-  const [saved, setSaved] = useState('');
+const STATUS_COLORS = {
+  SUSPECTED:     'bg-red-100 text-red-800 border-red-200',
+  INVESTIGATING: 'bg-amber-100 text-amber-800 border-amber-200',
+  LAB_PENDING:   'bg-blue-100 text-blue-800 border-blue-200',
+  CONFIRMED:     'bg-rose-100 text-rose-800 border-rose-200',
+  REJECTED:      'bg-slate-100 text-slate-600 border-slate-200',
+  RESOLVED:      'bg-emerald-100 text-emerald-700 border-emerald-200',
+};
 
-  const cases = useMemo(() => {
-    const db = liveData;
-    return (db.cases || []).map(c => {
-      const animal  = db.animals?.find(a => a.id === c.animalId) || {};
-      const disease = db.diseases?.find(d => d.id === c.suspectedDiseaseId) || {};
-      const farm    = db.farms?.find(f => f.id === animal.farmId) || {};
-      const samples = db.labSamples?.filter(s => s.caseId === c.id) || [];
-      return { ...c, animal, disease, farm, samples, stageIndex: CASE_STAGES.indexOf(c.stage) };
-    }).sort((a,b) => {
-      const rank = { 'New Alert':5,'Accepted':4,'Field Review':3,'Sample Collected':2,'Lab Submitted':2,'Confirmed / Rejected':1,'Action':1,'Follow-up':0,'Closed':-1 };
-      return (rank[b.stage]||0) - (rank[a.stage]||0);
-    });
-  }, [liveData]);
+// Valid next transitions from each status (mirrors server-side state machine)
+const NEXT_TRANSITIONS = {
+  SUSPECTED:     ['INVESTIGATING'],
+  INVESTIGATING: ['LAB_PENDING', 'CONFIRMED', 'REJECTED'],
+  LAB_PENDING:   ['CONFIRMED', 'REJECTED'],
+  CONFIRMED:     ['RESOLVED'],
+  REJECTED:      ['RESOLVED'],
+  RESOLVED:      [],
+};
 
-  const filtered = filterStage ? cases.filter(c => c.stage === filterStage) : cases;
-  const selCase  = selected ? cases.find(c => c.id === selected) : null;
+export default function VetCaseWorkflow() {
+  const [cases,        setCases]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState(null);
+  const [selected,     setSelected]     = useState(null);
+  const [filterStatus, setFilterStatus] = useState('');
+  const [actionMsg,    setActionMsg]    = useState('');
+  const [actionErr,    setActionErr]    = useState('');
+  const [submitting,   setSubmitting]   = useState(false);
 
-  function flash(msg) { setSaved(msg); setTimeout(() => setSaved(''), 2500); }
+  // Assessment form state
+  const [assessmentText,      setAssessmentText]      = useState('');
+  // Status update form state
+  const [statusNote,          setStatusNote]          = useState('');
+  const [selectedNextStatus,  setSelectedNextStatus]  = useState('');
 
-  function advanceStage(caseId, toStage, patch) {
-    updateCaseStage(caseId, toStage, patch || {});
-    flash(`Stage → ${toStage}`);
-    setSelected(caseId); // keep selection
+  // ── Fetch cases from backend ────────────────────────────────────────────────
+  const fetchCases = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.cases.getAll();
+      if (!res.success) {
+        // Backend rejected (auth, permission, etc.)
+        setError(res.error || 'Failed to load cases');
+        setCases([]);
+      } else {
+        setCases(Array.isArray(res.data) ? res.data : []);
+      }
+    } catch {
+      // Hard network failure — do NOT fall back to localStorage
+      setError('Backend unavailable. Case data cannot be displayed offline. Please check your connection and try again.');
+      setCases([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchCases(); }, [fetchCases]);
+
+  // ── Derived state ───────────────────────────────────────────────────────────
+  const filtered = useMemo(() =>
+    filterStatus ? cases.filter(c => c.status === filterStatus) : cases,
+  [cases, filterStatus]);
+
+  const selCase = useMemo(() =>
+    selected ? cases.find(c => c.id === selected) || null : null,
+  [cases, selected]);
+
+  // ── Flash helpers ───────────────────────────────────────────────────────────
+  function flash(msg)    { setActionMsg(msg);  setTimeout(() => setActionMsg(''),  3000); }
+  function flashErr(msg) { setActionErr(msg);  setTimeout(() => setActionErr(''),  5000); }
+
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
+  async function handleStatusUpdate() {
+    if (!selCase || !selectedNextStatus) return;
+    setSubmitting(true);
+    const res = await api.cases.updateStatus(selCase.id, selectedNextStatus, statusNote || undefined);
+    setSubmitting(false);
+    if (res.success) {
+      flash(`Status updated → ${STATUS_LABELS[selectedNextStatus]}`);
+      setStatusNote('');
+      setSelectedNextStatus('');
+      await fetchCases();
+    } else {
+      flashErr(res.error || 'Failed to update status');
+    }
   }
 
-  function recordObs() {
-    if (!selCase || !obsText.trim()) return;
-    advanceStage(selCase.id, 'Field Review', { clinicalObservations: obsText });
-    setObsText('');
+  async function handleAssessment() {
+    if (!selCase || !assessmentText.trim()) return;
+    setSubmitting(true);
+    const res = await api.cases.addAssessment(selCase.id, assessmentText.trim());
+    setSubmitting(false);
+    if (res.success) {
+      flash('Veterinary assessment recorded');
+      setAssessmentText('');
+      await fetchCases();
+    } else {
+      flashErr(res.error || 'Failed to record assessment');
+    }
   }
 
-  function recordSample() {
-    if (!selCase) return;
-    actions.addLabSample({
-      caseId: selCase.id, animalId: selCase.animalId,
-      ...sampleForm,
-      suspectedDiseaseId: selCase.suspectedDiseaseId,
-      collectedBy: 'Current Vet',
-    });
-    advanceStage(selCase.id, 'Sample Collected', { ...sampleForm });
-    flash('Sample recorded & case advanced to Sample Collected');
+  // ── Render helpers ──────────────────────────────────────────────────────────
+
+  function CaseListItem({ c }) {
+    const isSel = selected === c.id;
+    const label = STATUS_LABELS[c.status] || c.status;
+    const colorCls = STATUS_COLORS[c.status] || 'bg-slate-100 text-slate-600';
+    return (
+      <button
+        onClick={() => setSelected(c.id)}
+        className={`w-full text-left rounded-xl border p-3 transition-all ${
+          isSel ? 'ring-2 ring-teal-500 border-teal-300 bg-teal-50' : 'bg-white border-slate-200 hover:border-teal-200 hover:bg-slate-50'
+        }`}
+      >
+        <div className="flex justify-between items-start gap-1 mb-1">
+          <div className="text-xs font-bold text-teal-800 truncate">{c.caseNumber}</div>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${colorCls}`}>{label}</span>
+        </div>
+        <div className="text-sm font-semibold text-slate-800 truncate">
+          {c.animal?.tagId || c.animalId}
+        </div>
+        <div className="text-xs text-slate-500 truncate">
+          {c.suspectedDisease?.shortName || c.suspectedDisease?.name || '—'} · {c.farm?.district?.name || c.farm?.name || '—'}
+        </div>
+        <div className="text-[10px] text-slate-400 mt-1">
+          {new Date(c.createdAt).toLocaleDateString('en-IN')}
+        </div>
+      </button>
+    );
   }
 
-  function recordLabResult() {
-    if (!selCase) return;
-    const sample = selCase.samples?.[0];
-    if (sample) actions.updateLabResult(sample.id, labResultForm.result, labResultForm.notes);
-    advanceStage(selCase.id, 'Confirmed / Rejected', { labResult: labResultForm.result, labResultDate: new Date().toISOString().split('T')[0] });
-    flash(`Lab result recorded: ${labResultForm.result}`);
+  function StatusPipeline({ status }) {
+    const idx = BACKEND_STATUSES.indexOf(status);
+    return (
+      <div className="mt-4 overflow-x-auto">
+        <div className="flex items-center gap-0 min-w-max">
+          {BACKEND_STATUSES.map((s, i) => {
+            const done    = i < idx;
+            const current = i === idx;
+            return (
+              <React.Fragment key={s}>
+                <div className={`flex flex-col items-center ${current ? 'opacity-100' : done ? 'opacity-70' : 'opacity-25'}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    current ? 'bg-teal-600 text-white' : done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    {done ? '✓' : i + 1}
+                  </div>
+                  <div className="text-[9px] text-center mt-0.5 w-16 leading-tight text-slate-600">{STATUS_LABELS[s]}</div>
+                </div>
+                {i < BACKEND_STATUSES.length - 1 && (
+                  <div className={`h-0.5 w-4 shrink-0 mt-[-12px] ${done ? 'bg-emerald-400' : 'bg-slate-200'}`} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+    );
   }
 
-  function closeCase() {
-    if (!selCase) return;
-    advanceStage(selCase.id, 'Closed', { outcome: actionNote || 'Case closed.', closedAt: new Date().toISOString() });
-    setSelected(null);
+  // ── Loading state ───────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full py-20 text-slate-500">
+        <Loader2 size={24} className="animate-spin mr-2" />
+        <span className="text-sm font-medium">Loading cases from backend…</span>
+      </div>
+    );
   }
 
+  // ── Backend unavailable — hard error, no fake data ──────────────────────────
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
+        <AlertTriangle size={40} className="text-orange-400 mb-3" />
+        <h3 className="font-bold text-slate-800 mb-1">Case Data Unavailable</h3>
+        <p className="text-sm text-slate-600 mb-4">{error}</p>
+        <button
+          onClick={fetchCases}
+          className="flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600"
+        >
+          <RefreshCw size={14} /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  // ── Main UI ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex gap-4 h-full min-h-[600px]">
-      {/* Case list */}
+      {/* Case list panel */}
       <div className="w-72 shrink-0 space-y-2">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="font-bold text-slate-800 text-sm">Cases ({filtered.length})</h2>
-          <select className="text-xs border border-slate-200 rounded px-2 py-1 bg-white" value={filterStage} onChange={e => setFilterStage(e.target.value)}>
-            <option value="">All Stages</option>
-            {CASE_STAGES.map(s => <option key={s}>{s}</option>)}
-          </select>
+          <h2 className="font-bold text-slate-800 text-sm">
+            Cases ({filtered.length})
+          </h2>
+          <div className="flex items-center gap-1">
+            <select
+              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
+              <option value="">All Statuses</option>
+              {BACKEND_STATUSES.map(s => (
+                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+              ))}
+            </select>
+            <button onClick={fetchCases} title="Refresh" className="p-1 rounded hover:bg-slate-100">
+              <RefreshCw size={13} className="text-slate-500" />
+            </button>
+          </div>
         </div>
-        {filtered.map(c => (
-          <button key={c.id} onClick={() => setSelected(c.id)} className={`w-full text-left rounded-xl border p-3 transition-all ${selected === c.id ? 'ring-2 ring-teal-500 border-teal-300 bg-teal-50' : 'bg-white border-slate-200 hover:border-teal-200 hover:bg-slate-50'}`}>
-            <div className="flex justify-between items-start gap-1 mb-1">
-              <div className="text-xs font-bold text-teal-800">{c.id}</div>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${STAGE_COLORS[c.stage] || 'bg-slate-100 text-slate-600'}`}>{c.stage}</span>
-            </div>
-            <div className="text-sm font-semibold text-slate-800">{c.animalId}</div>
-            <div className="text-xs text-slate-500">{c.disease?.shortName || '—'} · {c.farm?.district}</div>
-            <div className="text-[10px] text-slate-400 mt-1">{new Date(c.openedAt).toLocaleDateString('en-IN')}</div>
-          </button>
-        ))}
+
+        {filtered.map(c => <CaseListItem key={c.id} c={c} />)}
+
         {filtered.length === 0 && (
-          <div className="py-8 text-center text-slate-400"><ClipboardList size={28} className="mx-auto mb-2" /><p className="text-sm">No cases found</p></div>
+          <div className="py-8 text-center text-slate-400">
+            <ClipboardList size={28} className="mx-auto mb-2" />
+            <p className="text-sm">No cases found</p>
+            <p className="text-xs mt-1 text-slate-300">Cases are created by authorized veterinarians and officials</p>
+          </div>
         )}
       </div>
 
-      {/* Case detail */}
+      {/* Case detail panel */}
       <div className="flex-1 min-w-0">
-        {!selCase && (
+        {!selCase ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400">
             <ClipboardList size={48} className="mb-3 text-slate-300" />
             <p className="font-semibold">Select a case to view details</p>
           </div>
-        )}
-        {selCase && (
+        ) : (
           <div className="space-y-4">
-            {saved && <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-800">{saved}</div>}
+            {/* Flash messages */}
+            {actionMsg && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-800">
+                ✓ {actionMsg}
+              </div>
+            )}
+            {actionErr && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm font-semibold text-red-800">
+                ✗ {actionErr}
+              </div>
+            )}
 
-            {/* Header */}
+            {/* Header card */}
             <Card className="p-4">
               <div className="flex flex-wrap justify-between gap-3 items-start">
                 <div>
-                  <div className="text-xs font-bold text-slate-400 mb-0.5">{selCase.id}</div>
-                  <h3 className="text-lg font-black text-slate-900">{selCase.animalId}</h3>
-                  <div className="text-sm text-slate-500">{selCase.animal?.speciesId} · {selCase.farm?.name} · {selCase.farm?.district}</div>
+                  <div className="text-xs font-bold text-slate-400 mb-0.5">{selCase.caseNumber}</div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    {selCase.animal?.tagId || selCase.animalId}
+                  </h3>
+                  <div className="text-sm text-slate-500">
+                    {selCase.animal?.species?.name || '—'} · {selCase.farm?.name || '—'} · {selCase.farm?.district?.name || '—'}
+                  </div>
                 </div>
                 <div className="text-right">
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full border ${STAGE_COLORS[selCase.stage] || ''}`}>{selCase.stage}</span>
-                  <div className="text-xs text-slate-400 mt-1">Opened: {new Date(selCase.openedAt).toLocaleString('en-IN')}</div>
-                  <div className="text-xs text-slate-400">Vet: {selCase.assignedVet || '—'}</div>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full border ${STATUS_COLORS[selCase.status] || ''}`}>
+                    {STATUS_LABELS[selCase.status] || selCase.status}
+                  </span>
+                  <div className="text-xs text-slate-400 mt-1">
+                    Opened: {new Date(selCase.createdAt).toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    Assigned Vet: {selCase.assignedVet?.fullName || '—'}
+                  </div>
+                  {selCase.createdBy && (
+                    <div className="text-xs text-slate-400">
+                      Created by: {selCase.createdBy.fullName}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Stage pipeline */}
-              <div className="mt-4 overflow-x-auto">
-                <div className="flex items-center gap-0 min-w-max">
-                  {CASE_STAGES.map((s, i) => {
-                    const done    = i < selCase.stageIndex;
-                    const current = i === selCase.stageIndex;
-                    return (
-                      <React.Fragment key={s}>
-                        <div className={`flex flex-col items-center ${current ? 'opacity-100' : done ? 'opacity-70' : 'opacity-30'}`}>
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${current ? 'bg-teal-600 text-white' : done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                            {done ? '✓' : i+1}
-                          </div>
-                          <div className="text-[9px] text-center mt-0.5 w-14 leading-tight text-slate-600">{s}</div>
-                        </div>
-                        {i < CASE_STAGES.length - 1 && <div className={`h-0.5 w-4 shrink-0 mt-[-12px] ${done ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
-                      </React.Fragment>
-                    );
-                  })}
+              {/* Status pipeline */}
+              <StatusPipeline status={selCase.status} />
+            </Card>
+
+            {/* Medical authority notice */}
+            <Card className="p-3 bg-amber-50 border-amber-200">
+              <div className="flex items-start gap-2">
+                <Info size={15} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <strong>Medical Authority Notice:</strong> System risk assessments indicate
+                  <em> potential disease risk</em> based on behavioural and physiological data.
+                  This is <strong>not a clinical or laboratory-confirmed diagnosis</strong>.
+                  Veterinary examination and, where indicated, laboratory confirmation are required.
                 </div>
               </div>
             </Card>
 
-            {/* Suspected disease */}
-            {selCase.disease?.id && (
-              <Card className="p-4 bg-amber-50 border-amber-200">
+            {/* Suspected disease (risk context) */}
+            {selCase.suspectedDisease && (
+              <Card className="p-4 bg-orange-50 border-orange-200">
                 <div className="flex items-start gap-2">
-                  <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <Info size={16} className="text-orange-600 shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-bold text-amber-900 text-sm">Suspected: {selCase.disease.name}</div>
-                    <div className="text-xs text-amber-700 mt-0.5">{selCase.disease.pathogen} · {selCase.disease.category}</div>
-                    <div className="text-xs text-amber-700 mt-0.5">Diagnostics: {selCase.disease.diagnostics}</div>
-                    {selCase.disease.zoonotic && <div className="mt-1 text-xs font-bold text-orange-800 bg-orange-100 border border-orange-200 px-2 py-0.5 rounded inline-block">⚠ ZOONOTIC — human health notification may be required</div>}
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Stage-specific action panels */}
-
-            {/* Accepted → Field Review */}
-            {(selCase.stage === 'Accepted') && (
-              <Card className="p-4">
-                <h4 className="font-bold text-slate-800 text-sm mb-3">Step: Enter Clinical Observations</h4>
-                <textarea className={inputCls} rows={3} placeholder="Describe findings: temperature, swellings, discharge, gait, etc." value={obsText} onChange={e => setObsText(e.target.value)} />
-                <button onClick={recordObs} className="mt-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600">
-                  Save Observations & Advance to Field Review
-                </button>
-              </Card>
-            )}
-
-            {/* Field Review → Sample Collected */}
-            {selCase.stage === 'Field Review' && (
-              <Card className="p-4">
-                <h4 className="font-bold text-slate-800 text-sm mb-1">Clinical Observations</h4>
-                <p className="text-sm text-slate-700 italic mb-3">{selCase.clinicalObservations || 'Not entered yet.'}</p>
-                <h4 className="font-bold text-slate-800 text-sm mb-3">Collect Sample</h4>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Sample Type</span>
-                    <select className={inputCls} value={sampleForm.sampleType} onChange={e => setSampleForm(f => ({ ...f, sampleType: e.target.value }))}>
-                      {['Blood / Serum','Nasal swab','Vesicular fluid','Epithelial tissue','Urine','Milk','Skin biopsy','Nasal/ocular swab'].map(t => <option key={t}>{t}</option>)}
-                    </select>
-                  </label>
-                  <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Lab Test</span>
-                    <select className={inputCls} value={sampleForm.test} onChange={e => setSampleForm(f => ({ ...f, test: e.target.value }))}>
-                      {['RT-PCR','ELISA','Bacterial culture & sensitivity','Blood smear (Giemsa)','Serology (IgM ELISA)','PCR','Mallein test','Complement Fixation Test'].map(t => <option key={t}>{t}</option>)}
-                    </select>
-                  </label>
-                  <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Laboratory</span>
-                    <select className={inputCls} value={sampleForm.laboratory} onChange={e => setSampleForm(f => ({ ...f, laboratory: e.target.value }))}>
-                      <option value="">— Select —</option>
-                      {['Regional Disease Diagnostic Laboratory, Pune','Regional Disease Diagnostic Laboratory, Nagpur','State Veterinary Biological & Research Institute, Pune','District Veterinary Laboratory'].map(l => <option key={l}>{l}</option>)}
-                    </select>
-                  </label>
-                </div>
-                <button onClick={recordSample} className="mt-3 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600">
-                  Record Sample Collection
-                </button>
-              </Card>
-            )}
-
-            {/* Lab Submitted → Result */}
-            {(selCase.stage === 'Lab Submitted' || selCase.stage === 'Sample Collected') && (
-              <Card className="p-4">
-                <h4 className="font-bold text-slate-800 text-sm mb-3">Enter Lab Result</h4>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Result</span>
-                    <select className={inputCls} value={labResultForm.result} onChange={e => setLabResultForm(f => ({ ...f, result: e.target.value }))}>
-                      <option>Pending</option><option>Positive</option><option>Negative</option><option>Inconclusive</option>
-                    </select>
-                  </label>
-                  <label className="block"><span className="text-xs font-semibold text-slate-600 block mb-1">Lab Notes</span>
-                    <input className={inputCls} value={labResultForm.notes} onChange={e => setLabResultForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional lab comments" />
-                  </label>
-                </div>
-                <button onClick={recordLabResult} className="mt-3 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-600">
-                  <FlaskConical size={14} className="inline mr-1.5" />Record Lab Result
-                </button>
-              </Card>
-            )}
-
-            {/* Confirmed/Action → Close */}
-            {(selCase.stage === 'Confirmed / Rejected' || selCase.stage === 'Action' || selCase.stage === 'Follow-up') && (
-              <Card className="p-4">
-                <h4 className="font-bold text-slate-800 text-sm mb-1">Lab Result: <span className={selCase.labResult === 'Positive' ? 'text-red-700' : 'text-emerald-700'}>{selCase.labResult || '—'}</span></h4>
-                <h4 className="font-bold text-slate-800 text-sm mb-3 mt-3">Record Action / Close Case</h4>
-                <textarea className={inputCls} rows={2} placeholder="Describe actions taken, containment orders, follow-up plan…" value={actionNote} onChange={e => setActionNote(e.target.value)} />
-                <div className="flex gap-2 mt-3">
-                  {selCase.stage !== 'Action' && (
-                    <button onClick={() => advanceStage(selCase.id, 'Action', { action: actionNote })} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600">Mark Action Taken</button>
-                  )}
-                  <button onClick={closeCase} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600">Close Case</button>
-                </div>
-              </Card>
-            )}
-
-            {/* Notes */}
-            {selCase.notes && (
-              <Card className="p-4 bg-slate-50 border-slate-200">
-                <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Notes</h4>
-                <p className="text-sm text-slate-700">{selCase.notes}</p>
-              </Card>
-            )}
-
-            {/* Lab samples */}
-            {selCase.samples?.length > 0 && (
-              <Card className="p-4">
-                <h4 className="font-bold text-slate-800 text-sm mb-3">Lab Samples</h4>
-                {selCase.samples.map(s => (
-                  <div key={s.id} className="flex justify-between items-center text-sm py-2 border-b border-slate-100 last:border-0">
-                    <div>
-                      <div className="font-semibold text-slate-800">{s.id}</div>
-                      <div className="text-xs text-slate-500">{s.sampleType} · {s.test} · {s.laboratory}</div>
+                    <div className="font-bold text-orange-900 text-sm">
+                      Potential Risk Assessment: {selCase.suspectedDisease.name}
                     </div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${s.result === 'Positive' ? 'bg-red-100 text-red-800' : s.result === 'Negative' ? 'bg-emerald-100 text-emerald-800' : s.result === 'Inconclusive' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>{s.result}</span>
+                    <div className="text-xs text-orange-700 mt-0.5">
+                      This is a system risk assessment based on observed signals — not a confirmed diagnosis.
+                      Veterinary examination required.
+                    </div>
                   </div>
-                ))}
+                </div>
               </Card>
             )}
+
+            {/* System clinical notes (Brain output) */}
+            {selCase.clinicalNotes && (
+              <Card className="p-4 bg-slate-50 border-slate-200">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">
+                  System Risk Context (not a diagnosis)
+                </h4>
+                <p className="text-sm text-slate-700">{selCase.clinicalNotes}</p>
+              </Card>
+            )}
+
+            {/* Veterinary assessment (distinct from Brain output) */}
+            {selCase.vetAssessment && (
+              <Card className="p-4 bg-teal-50 border-teal-200">
+                <h4 className="text-xs font-semibold text-teal-700 uppercase mb-1 flex items-center gap-1">
+                  <Stethoscope size={12} /> Veterinary Assessment
+                </h4>
+                <p className="text-sm text-teal-900">{selCase.vetAssessment}</p>
+                {selCase.vetAssessmentAt && (
+                  <p className="text-xs text-teal-600 mt-1">
+                    Recorded: {new Date(selCase.vetAssessmentAt).toLocaleString('en-IN')}
+                  </p>
+                )}
+              </Card>
+            )}
+
+            {/* Record veterinary assessment panel (for assigned vets) */}
+            {selCase.status !== 'RESOLVED' && selCase.status !== 'REJECTED' && (
+              <Card className="p-4">
+                <h4 className="font-bold text-slate-800 text-sm mb-1 flex items-center gap-1.5">
+                  <Stethoscope size={14} className="text-teal-600" />
+                  Record Veterinary Assessment
+                </h4>
+                <p className="text-xs text-slate-500 mb-2">
+                  Record your clinical findings. This is a <strong>veterinary assessment</strong>, not a confirmed diagnosis.
+                </p>
+                <textarea
+                  className={inputCls}
+                  rows={3}
+                  placeholder="Describe clinical findings: temperature, physical signs, behavioural observations, differential considerations…"
+                  value={assessmentText}
+                  onChange={e => setAssessmentText(e.target.value)}
+                />
+                <button
+                  onClick={handleAssessment}
+                  disabled={submitting || !assessmentText.trim()}
+                  className="mt-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? <Loader2 size={14} className="inline animate-spin mr-1" /> : null}
+                  Save Assessment
+                </button>
+              </Card>
+            )}
+
+            {/* Status advance panel */}
+            {NEXT_TRANSITIONS[selCase.status]?.length > 0 && (
+              <Card className="p-4">
+                <h4 className="font-bold text-slate-800 text-sm mb-3">Advance Case Status</h4>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-600 block mb-1">Next Status</span>
+                    <select
+                      className={inputCls}
+                      value={selectedNextStatus}
+                      onChange={e => setSelectedNextStatus(e.target.value)}
+                    >
+                      <option value="">— Select —</option>
+                      {NEXT_TRANSITIONS[selCase.status].map(s => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-600 block mb-1">Notes (optional)</span>
+                    <input
+                      className={inputCls}
+                      value={statusNote}
+                      onChange={e => setStatusNote(e.target.value)}
+                      placeholder="Reason for status change…"
+                    />
+                  </label>
+                </div>
+                <button
+                  onClick={handleStatusUpdate}
+                  disabled={submitting || !selectedNextStatus}
+                  className="mt-3 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? <Loader2 size={14} className="inline animate-spin mr-1" /> : null}
+                  Update Status
+                </button>
+              </Card>
+            )}
+
+            {/* Lab scope notice */}
+            {(selCase.status === 'LAB_PENDING' || selCase.status === 'INVESTIGATING') && (
+              <Card className="p-4 bg-purple-50 border-purple-200">
+                <div className="flex items-center gap-2">
+                  <FlaskConical size={15} className="text-purple-600" />
+                  <p className="text-sm text-purple-800">
+                    Laboratory sample collection and results are managed in the <strong>Laboratory module</strong>.
+                    Link lab orders to this case using Case Number <strong>{selCase.caseNumber}</strong>.
+                  </p>
+                </div>
+              </Card>
+            )}
+
+            {/* Status history */}
+            {selCase.history?.length > 0 && (
+              <Card className="p-4">
+                <h4 className="font-bold text-slate-800 text-sm mb-3">Status History</h4>
+                <div className="space-y-2">
+                  {selCase.history.map((h, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+                      <ChevronRight size={12} className="text-slate-400 shrink-0" />
+                      <span className="font-semibold">{h.oldStatus}</span>
+                      <span className="text-slate-400">→</span>
+                      <span className="font-semibold">{h.newStatus}</span>
+                      {h.notes && <span className="text-slate-400 italic truncate">— {h.notes}</span>}
+                      <span className="ml-auto text-slate-300 shrink-0">
+                        {new Date(h.changedAt).toLocaleDateString('en-IN')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Alert traceability */}
+            {selCase.alert && (
+              <Card className="p-4 bg-slate-50 border-slate-200">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Originating Alert</h4>
+                <div className="flex items-center gap-2 text-sm">
+                  <AlertTriangle size={14} className="text-orange-500" />
+                  <span className="font-semibold text-slate-800">{selCase.alert.title}</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ml-auto ${
+                    selCase.alert.severity === 'CRITICAL' ? 'bg-red-100 text-red-800 border-red-200' :
+                    selCase.alert.severity === 'RED' ? 'bg-red-100 text-red-700 border-red-200' :
+                    'bg-amber-100 text-amber-800 border-amber-200'
+                  }`}>
+                    {selCase.alert.severity}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 mt-1">Animal Tag: {selCase.alert.animalTag}</div>
+              </Card>
+            )}
+
           </div>
         )}
       </div>

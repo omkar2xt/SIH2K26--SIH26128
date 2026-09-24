@@ -1,31 +1,55 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { RefreshCw, Wifi, WifiOff, CheckCircle2, Clock, Database, Trash2 } from 'lucide-react';
 import { Card, SectionTitle, StatCard } from '../common/UIComponents';
 import { store } from '../../db/store';
+import { offlineSync } from '../../db/offlineSync';
+import { api } from '../../services/api/api';
 
 export default function SyncCenter({ liveData, actions, offlineMode, pendingSync }) {
   const [syncing,   setSyncing]   = useState(false);
   const [message,   setMessage]   = useState('');
   const [auditPage, setAuditPage] = useState(0);
+  const [queue, setQueue] = useState([]);
 
-  const queue   = useMemo(() => store.getAll('syncQueue'), [liveData]);
+  useEffect(() => {
+    offlineSync.getPendingQueue().then(setQueue);
+  }, [liveData, offlineMode, syncing]);
+
   const auditLog = useMemo(() => store.getAll('auditLog').slice().reverse(), [liveData]);
   const pageSize = 15;
   const auditPage_ = auditLog.slice(auditPage * pageSize, (auditPage + 1) * pageSize);
 
-  function handleSync() {
+  async function handleSync() {
     setSyncing(true);
-    const count = actions.syncNow();
-    setTimeout(() => {
-      setSyncing(false);
-      setMessage(`Synced ${count} queued operations.`);
-      setTimeout(() => setMessage(''), 3000);
-    }, 1200);
+    try {
+      const currentQueue = await offlineSync.getPendingQueue();
+      if (currentQueue.length > 0) {
+        const res = await api.sync.push(currentQueue);
+        if (res && res.syncResults) {
+          for (const result of res.syncResults) {
+            if (result.status === 'SYNCED') {
+              await offlineSync.markOperationSynced(result.clientRef);
+            } else {
+              await offlineSync.markOperationFailed(result.clientRef, result.error || 'Failed');
+            }
+          }
+          setMessage(`Synced ${res.syncedCount} queued operations.`);
+        }
+      } else {
+        setMessage('No pending operations.');
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage(`Sync failed: ${err.message}`);
+    }
+    setSyncing(false);
+    setTimeout(() => setMessage(''), 3000);
   }
 
   function handleReset() {
     if (!window.confirm('Reset ALL data to seed state? This cannot be undone.')) return;
     actions.resetDB();
+    offlineSync.clearQueue().then(() => setQueue([]));
     setMessage('Database reset to seed state.');
     setTimeout(() => setMessage(''), 3000);
   }
@@ -62,7 +86,7 @@ export default function SyncCenter({ liveData, actions, offlineMode, pendingSync
           <div className="text-xs text-slate-500">Connection</div>
         </Card>
         <Card className="p-4 text-center">
-          <div className="text-2xl font-black text-amber-800">{pendingSync || queue.length}</div>
+          <div className="text-2xl font-black text-amber-800">{queue.length}</div>
           <div className="text-xs text-slate-500 font-semibold">Pending Sync</div>
         </Card>
         <Card className="p-4 text-center">
@@ -79,7 +103,10 @@ export default function SyncCenter({ liveData, actions, offlineMode, pendingSync
       <Card className="p-4">
         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wide">Sync Controls</h3>
         <div className="flex flex-wrap gap-3">
-          <button onClick={() => actions.toggleOffline()} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold border ${offlineMode ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-orange-600 text-white border-orange-600'}`}>
+          <button onClick={() => {
+            window.__FORCE_OFFLINE__ = !offlineMode;
+            actions.toggleOffline();
+          }} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold border ${offlineMode ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-orange-600 text-white border-orange-600'}`}>
             {offlineMode ? <><Wifi size={14} /> Go Online</> : <><WifiOff size={14} /> Simulate Offline</>}
           </button>
           <button onClick={handleSync} disabled={syncing || (!offlineMode && queue.length === 0)}
@@ -100,7 +127,8 @@ export default function SyncCenter({ liveData, actions, offlineMode, pendingSync
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {queue.map(q => (
               <div key={q.id} className="flex justify-between text-xs text-slate-700 border-b border-slate-100 py-1">
-                <span className="font-semibold">{q.type}</span>
+                <span className="font-semibold">{q.entityName} ({q.actionType})</span>
+                <span className="font-semibold text-amber-600">{q.status}</span>
                 <span className="text-slate-400">{new Date(q.queuedAt).toLocaleString('en-IN')}</span>
               </div>
             ))}

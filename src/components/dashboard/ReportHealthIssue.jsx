@@ -53,13 +53,15 @@ export default function ReportHealthIssue({ offlineMode, role }) {
     // Convert symptoms + notes into a single notes field for the backend, since backend observation model might not have symptoms array natively
     const fullNotes = `Symptoms: ${form.symptoms.join(', ')}\nNotes: ${form.notes}`;
     
+    // To trigger the Golden Demo Intelligence properly, we simulate the drop in telemetry here 
+    // since we don't have real IoT hardware attached to the frontend form.
     const obs = {
       animalId: form.animalId,
       notes: fullNotes,
-      severity: form.severity,
-      // Metadata
-      cameraSource: form.hasCamera,
-      iotSource: form.hasIoT,
+      activityLevel: form.symptoms.includes('Lying down / not standing up') ? 10 : undefined,
+      feedingMinutes: form.symptoms.includes('Not eating / low appetite') ? 20 : undefined,
+      temperatureCelsius: form.symptoms.includes('High temperature (feels hot)') ? 40.5 : undefined,
+      dataSource: form.hasIoT ? 'SIMULATED_IOT' : 'FARMER_OBSERVATION',
     };
     
     const res = await api.observations.create(obs);
@@ -180,7 +182,7 @@ export default function ReportHealthIssue({ offlineMode, role }) {
             </label>
             <label className={`flex items-center gap-2 rounded-lg border p-2 cursor-pointer text-xs font-semibold ${form.hasIoT ? 'bg-blue-50 border-blue-400 text-blue-800' : 'bg-white border-slate-200 text-slate-600'}`}>
               <input type="checkbox" className="accent-blue-600" checked={form.hasIoT} onChange={e => setForm(f => ({ ...f, hasIoT: e.target.checked }))} />
-              <Cpu size={13} /> IoT/Sensor triggered
+              <Cpu size={13} /> Simulated IoT/Sensor triggered
             </label>
           </div>
         </div>

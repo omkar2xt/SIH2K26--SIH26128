@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { MapPin, Shield, Plus, CheckCircle2, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { MapPin, Shield, Plus, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
 import { Card, SectionTitle } from '../common/UIComponents';
 import { reportService } from '../../services/reportService';
 
@@ -10,8 +10,29 @@ export default function OfficialDashboard({ liveData, actions }) {
   const [zoneForm, setZoneForm] = useState({ district:'Nashik', description:'', diseaseId:'', reason:'', restrictedMovement: true });
   const [saved, setSaved] = useState('');
 
-  const summary = useMemo(() => reportService.getStateSummary(), [liveData]);
-  const districtStats = useMemo(() => reportService.getDistrictStats(), [liveData]);
+  const [summary, setSummary] = useState({ totalAnimals: 0, totalFarms: 0, openAlerts: 0, criticalAlerts: 0, activeCases: 0, pendingLabs: 0, highRiskAnimals: 0, activeExposures: 0, containmentZones: 0, overdueVaccinations: 0 });
+  const [districtStats, setDistrictStats] = useState([]);
+  const [diseaseDistribution, setDiseaseDistribution] = useState([]);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [s, d, dd] = await Promise.all([
+          reportService.getStateSummary(),
+          reportService.getDistrictStats(),
+          reportService.getDiseaseDistribution()
+        ]);
+        setSummary(s);
+        setDistrictStats(d);
+        setDiseaseDistribution(dd);
+      } catch (err) {
+        console.error("Failed to load dashboard data", err);
+      }
+    }
+    loadData();
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
+  }, []);
   const zones = liveData.containmentZones || [];
 
   function createZone() {
@@ -111,6 +132,32 @@ export default function OfficialDashboard({ liveData, actions }) {
             </div>
           );
         })}
+      </Card>
+
+      {/* Disease Distribution Chart */}
+      <Card className="p-4">
+        <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center gap-1.5 mb-4">
+          <Activity size={15} className="text-purple-600" /> Disease Distribution Overview
+        </h3>
+        {diseaseDistribution.length === 0 ? (
+          <p className="text-slate-400 text-sm text-center py-4">No active cases reported.</p>
+        ) : (
+          <div className="space-y-3">
+            {diseaseDistribution.map((d, i) => {
+              const maxCases = Math.max(...diseaseDistribution.map(x => x.cases));
+              const width = Math.max(5, (d.cases / maxCases) * 100);
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="w-32 text-xs font-semibold text-slate-700 truncate">{d.disease}</div>
+                  <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden flex items-center">
+                    <div className="h-full bg-purple-500 rounded-full transition-all duration-500" style={{ width: `${width}%` }}></div>
+                  </div>
+                  <div className="w-8 text-xs font-bold text-slate-600 text-right">{d.cases}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       {/* District risk table */}

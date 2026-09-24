@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { offlineSync } from '../../db/offlineSync';
 
 export const api = {
   auth: {
@@ -14,11 +15,33 @@ export const api = {
     getAll: () => apiClient('/animals'),
     getById: (id) => apiClient(`/animals/${id}`)
   },
-  observations: {
-    create: (data) => apiClient('/observations', {
+  sync: {
+    push: (operations) => apiClient('/sync', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify({ operations })
     })
+  },
+  observations: {
+    create: async (data) => {
+      // Offline-first approach
+      if (!navigator.onLine || window.__FORCE_OFFLINE__) {
+        const id = await offlineSync.queueOperation('observation', 'CREATE', data);
+        return { id, offline: true, status: 'PENDING' };
+      }
+      try {
+        return await apiClient('/observations', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+      } catch (err) {
+        // If network error, fallback to queue
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          const id = await offlineSync.queueOperation('observation', 'CREATE', data);
+          return { id, offline: true, status: 'PENDING' };
+        }
+        throw err;
+      }
+    }
   },
   intelligence: {
     evaluate: (animalId, currentReadings) => apiClient('/intelligence/evaluate', {
@@ -65,6 +88,72 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ vetAssessment, ...(suspectedDiseaseId ? { suspectedDiseaseId } : {}) })
     }),
+  },
+
+  lab: {
+    /** GET /lab/reference — SampleTypes, LabFacilities, DiagnosticMethods for dropdowns */
+    getReference: () => apiClient('/lab/reference'),
+
+    /** GET /lab/orders — list orders scoped to authenticated user */
+    getOrders: (params = {}) => apiClient('/lab/orders?' + new URLSearchParams({ page: 1, pageSize: 100, ...params })),
+
+    /** GET /lab/orders/:id — single order with full detail */
+    getOrder: (id) => apiClient(`/lab/orders/${id}`),
+
+    /** POST /lab/orders — create lab order + sample + test atomically */
+    createOrder: (data) => apiClient('/lab/orders', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+
+    /** PUT /lab/orders/:id/status — advance order status */
+    updateOrderStatus: (id, status) => apiClient(`/lab/orders/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    }),
+
+    /** GET /lab/tests/:testId/result — get result for a specific test */
+    getTestResult: (testId) => apiClient(`/lab/tests/${testId}/result`),
+
+    /** POST /lab/tests/:testId/result — record lab result; triggers case transition server-side */
+    recordResult: (testId, resultOutcome, remarks, quantitativeValue, verifiedBy) =>
+      apiClient(`/lab/tests/${testId}/result`, {
+        method: 'POST',
+        body: JSON.stringify({
+          resultOutcome,
+          ...(remarks            ? { remarks }            : {}),
+          ...(quantitativeValue  ? { quantitativeValue }  : {}),
+          ...(verifiedBy         ? { verifiedBy }         : {}),
+        })
+      }),
+  },
+  vaccination: {
+    getReference: () => apiClient('/vaccinations/reference'),
+    getStats: () => apiClient('/vaccinations/stats'),
+    getRecords: (params) => {
+      const q = new URLSearchParams();
+      if (params?.page) q.append('page', params.page);
+      if (params?.pageSize) q.append('pageSize', params.pageSize);
+      return apiClient(`/vaccinations?${q}`);
+    },
+    create: (data) => apiClient('/vaccinations', { method: 'POST', body: JSON.stringify(data) })
+  },
+  gis: {
+    getMapData: () => apiClient('/gis/map-data')
+  },
+  epidemiology: {
+    getExposures: (params) => {
+      const q = new URLSearchParams(params).toString();
+      return apiClient(`/epidemiology/exposure?${q}`);
+    },
+    getClusters: (params) => {
+      const q = new URLSearchParams(params).toString();
+      return apiClient(`/epidemiology/clusters?${q}`);
+    },
+    verifyCluster: (id, payload) => apiClient(`/epidemiology/clusters/${id}/verify`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
   }
 };
 

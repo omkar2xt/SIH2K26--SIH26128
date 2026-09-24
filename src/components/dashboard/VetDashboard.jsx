@@ -1,13 +1,36 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldAlert, AlertTriangle, Eye, FlaskConical, Network, ClipboardList, ChevronRight, Activity, Bell } from 'lucide-react';
 import { SectionTitle, StatCard, Card, RiskBadge } from '../common/UIComponents';
 
 export default function VetDashboard({ liveData, setPage, role, actions }) {
+  // Backend cases — fetched independently of liveData simulation
+  const [backendCases,      setBackendCases]      = useState([]);
+  const [casesLoading,      setCasesLoading]      = useState(true);
+  const [casesError,        setCasesError]        = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { api } = await import('../../services/api/api.js');
+        const res = await api.cases.getAll();
+        if (res.success) {
+          setBackendCases(Array.isArray(res.data) ? res.data : []);
+        } else {
+          setCasesError(res.error || 'Failed to load cases');
+        }
+      } catch {
+        setCasesError('Backend unavailable');
+      } finally {
+        setCasesLoading(false);
+      }
+    })();
+  }, []);
+
   const critical   = liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'CRITICAL').length;
   const red        = liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'RED').length;
   const orange     = liveData.animals.filter(a => a.riskEval?.healthRiskLevel === 'ORANGE').length;
   const labPending = (liveData.labSamples || []).filter(s => s.result === 'Pending').length;
-  const openCases  = (liveData.cases || []).filter(c => c.stage !== 'Closed').length;
+  const openCases  = backendCases.filter(c => c.status !== 'RESOLVED' && c.status !== 'REJECTED').length;
   const openAlerts = (liveData.alerts || []).filter(a => a.status === 'OPEN').length;
 
   const priorityAlerts = liveData.animals
@@ -15,15 +38,10 @@ export default function VetDashboard({ liveData, setPage, role, actions }) {
     .sort((a,b) => (b.riskEval?.score||0) - (a.riskEval?.score||0))
     .slice(0, 6);
 
-  const recentCases = (liveData.cases || [])
-    .filter(c => c.stage !== 'Closed')
-    .sort((a,b) => new Date(b.openedAt) - new Date(a.openedAt))
-    .slice(0, 4)
-    .map(c => {
-      const animal  = (liveData.animals||[]).find(a => a.id === c.animalId) || {};
-      const disease = (liveData.diseases||[]).find(d => d.id === c.suspectedDiseaseId) || {};
-      return { ...c, animal, disease };
-    });
+  const recentCases = backendCases
+    .filter(c => c.status !== 'RESOLVED' && c.status !== 'REJECTED')
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 4);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -98,21 +116,30 @@ export default function VetDashboard({ liveData, setPage, role, actions }) {
             </div>
           </Card>
 
-          {/* Open cases */}
+          {/* Open cases — backend-authoritative */}
           <Card className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-slate-900">Active Cases</h3>
               <button onClick={() => setPage('cases')} className="text-xs text-teal-700 font-semibold hover:underline">All →</button>
             </div>
-            <div className="space-y-1.5">
-              {recentCases.length ? recentCases.map(c => (
-                <button key={c.id} onClick={() => setPage('cases')} className="w-full text-left rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-xs">
-                  <div className="font-bold text-slate-800">{c.animalId}</div>
-                  <div className="text-slate-500">{c.disease?.shortName || '—'}</div>
-                  <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 border border-teal-200 mt-0.5">{c.stage}</span>
-                </button>
-              )) : <p className="text-slate-400 text-xs text-center py-3">No open cases.</p>}
-            </div>
+            {casesLoading ? (
+              <p className="text-xs text-slate-400 text-center py-3">Loading…</p>
+            ) : casesError ? (
+              <p className="text-xs text-red-500 text-center py-2">{casesError}</p>
+            ) : (
+              <div className="space-y-1.5">
+                {recentCases.length ? recentCases.map(c => (
+                  <button key={c.id} onClick={() => setPage('cases')}
+                    className="w-full text-left rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-xs">
+                    <div className="font-bold text-slate-800">{c.animal?.tagId || c.animalId}</div>
+                    <div className="text-slate-500">{c.suspectedDisease?.shortName || '—'}</div>
+                    <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 border border-teal-200 mt-0.5">
+                      {c.status}
+                    </span>
+                  </button>
+                )) : <p className="text-slate-400 text-xs text-center py-3">No open cases.</p>}
+              </div>
+            )}
           </Card>
         </div>
       </div>
