@@ -85,8 +85,8 @@ function getCaseResourceScope(user) {
       return { animal: { farm: { ownerId: userId } } };
 
     case 'VETERINARIAN':
-      // Vets see cases explicitly assigned to them
-      return { assignedVetId: userId };
+      // Vets see cases explicitly assigned to them or created by them
+      return { OR: [{ assignedVetId: userId }, { createdById: userId }] };
 
     case 'DISTRICT_OFFICIAL':
     case 'STATE_OFFICIAL':
@@ -122,10 +122,29 @@ async function getAuthorizedCase(caseId, user) {
   return prisma.case.findFirst({
     where,
     include: {
-      animal: { include: { farm: true } },
+      animal: { 
+        include: { 
+          farm: true,
+          healthEvents: {
+            include: { snapshots: true },
+            orderBy: { createdAt: 'desc' },
+            take: 5
+          }
+        } 
+      },
       assignedVet: { select: { id: true, fullName: true, username: true } },
       createdBy:   { select: { id: true, fullName: true, username: true } },
-      alert:       { select: { id: true, title: true, severity: true, animalTag: true } },
+      alert: { 
+        select: { 
+          id: true, 
+          title: true, 
+          severity: true, 
+          animalTag: true,
+          healthEvent: {
+            include: { snapshots: true }
+          }
+        } 
+      },
       suspectedDisease: true,
       history:     { orderBy: { changedAt: 'desc' } },
     }
@@ -260,6 +279,33 @@ function formatCaseResponse(c) {
     alert:            c.alert            || undefined,
     suspectedDisease: c.suspectedDisease || undefined,
     history:          c.history          || undefined,
+    snapshots: (() => {
+      const all = (c.alert?.healthEvent?.snapshots || []).concat(
+        (c.animal?.healthEvents || []).flatMap(he => he.snapshots || [])
+      );
+      const seen = new Set();
+      const unique = [];
+      for (const s of all) {
+        if (s && s.id && !seen.has(s.id)) {
+          seen.add(s.id);
+          unique.push(s);
+        }
+      }
+      return unique.map(s => {
+        let parsed = null;
+        try {
+          parsed = typeof s.snapshotJson === 'string' ? JSON.parse(s.snapshotJson) : s.snapshotJson;
+        } catch (e) {
+          parsed = s.snapshotJson;
+        }
+        return {
+          id: s.id,
+          eventId: s.eventId,
+          createdAt: s.createdAt,
+          data: parsed,
+        };
+      });
+    })(),
     createdAt:        c.createdAt,
     updatedAt:        c.updatedAt,
   };

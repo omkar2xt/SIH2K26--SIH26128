@@ -6,10 +6,12 @@ const { calculateDeviation } = require('./healthFingerprintService');
 const ZOONOTIC_SET = new Set(['DIS_04', 'DIS_05', 'DIS_07', 'DIS_09', 'DIS_11', 'DIS_12']);
 const NOTIFIABLE_SET = new Set(['DIS_01', 'DIS_02', 'DIS_03', 'DIS_04', 'DIS_06', 'DIS_07', 'DIS_08', 'DIS_09', 'DIS_10', 'DIS_11', 'DIS_12']);
 
-function evaluateRisk(animal, currentReadings, baselineReadings, diseases = [], exposureEvents = [], diseaseSpecies = []) {
+function evaluateRisk(animal, currentReadings = {}, baselineReadings = { activity: 80, feeding: 80, movement: 80, rumination: 80 }, diseases = [], exposureEvents = [], diseaseSpecies = []) {
+  const cur = currentReadings || {};
+  const base = baselineReadings || { activity: 80, feeding: 80, movement: 80, rumination: 80 };
   let score = 0;
   const reasons = [];
-  const drops = calculateDeviation(currentReadings, baselineReadings);
+  const drops = calculateDeviation(cur, base);
   const { actDrop, feedDrop, moveDrop, rumDrop } = drops;
 
   // 1. Evidence Fusion (matched to frontend brain/reasoning/evidence-fusion.ts)

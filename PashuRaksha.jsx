@@ -348,8 +348,9 @@ const NAV = {
   official: [ { id: "dashboard", label: "State Dashboard", icon: Home }, { id: "gis", label: "GIS Map", icon: MapPin }, { id: "clusters", label: "Disease Trends & Clusters", icon: Layers }, { id: "vaccination", label: "Vaccination Coverage", icon: Syringe }, { id: "prevention", label: "Containment", icon: ShieldAlert }, { id: "alerts", label: "Reports & Alerts", icon: Bell } ],
   field: [ { id: "dashboard", label: "Dashboard", icon: Home }, { id: "animals", label: "Animals", icon: PawPrint }, { id: "report", label: "Report Issue", icon: FileText }, { id: "alerts", label: "Alerts", icon: Bell } ],
   admin: [ { id: "dashboard", label: "Dashboard", icon: Home }, { id: "animals", label: "Animals", icon: PawPrint }, { id: "farms", label: "Farms", icon: Building2 }, { id: "diseases", label: "Disease Knowledge", icon: Database }, { id: "sync", label: "Sync Center", icon: RefreshCw }, { id: "settings", label: "Settings", icon: SettingsIcon } ],
+  lab: [ { id: "dashboard", label: "Laboratory", icon: FlaskConical } ],
 };
-const ROLE_LABEL = { farmer: "Farmer", vet: "Veterinarian", official: "District/Government Official", field: "Field Worker", admin: "Administrator" };
+const ROLE_LABEL = { farmer: "Farmer", vet: "Veterinarian", official: "District/Government Official", field: "Field Worker", admin: "Administrator", lab: "Diagnostic Laboratory" };
 
 /* ================================ APP ===================================== */
 export default function PashuRakshaApp() {
@@ -467,6 +468,7 @@ export default function PashuRakshaApp() {
           {page === "dashboard" && role === "official" && <OfficialDashboard goto={goto} />}
           {page === "dashboard" && role === "field" && <FarmerDashboard goto={goto} onReport={() => setReportOpen(true)} onAddAnimal={() => setAddAnimalOpen(true)} fieldMode />}
           {page === "dashboard" && role === "admin" && <AdminDashboard goto={goto} />}
+          {page === "dashboard" && role === "lab" && <LaboratoryModule />}
 
           {page === "animals" && <AnimalsList goto={goto} onAddAnimal={() => setAddAnimalOpen(true)} role={role} />}
           {page === "animal-profile" && <AnimalProfile animal={selectedAnimal} goto={goto} role={role} />}
@@ -535,6 +537,7 @@ function Landing({ onSelectRole }) {
             <div className="mt-4 flex gap-4 text-xs text-slate-400">
               <button onClick={() => onSelectRole("field")} className="underline decoration-dotted underline-offset-2 hover:text-slate-600">Field Worker login</button>
               <button onClick={() => onSelectRole("admin")} className="underline decoration-dotted underline-offset-2 hover:text-slate-600">Admin login</button>
+              <button onClick={() => onSelectRole("lab")} className="underline decoration-dotted underline-offset-2 hover:text-slate-600">Laboratory login</button>
             </div>
           </div>
 

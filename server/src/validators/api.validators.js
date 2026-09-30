@@ -230,8 +230,17 @@ const verifyClusterSchema = z.object({
   containmentRadiusKm: z.number().min(0).max(50).optional(),
 }).strict();
 
+/**
+ * PUT /alerts/:id/resolve — Resolve an alert.
+ * Mass-assignment protection: rejects status, severity, tenantId, ownerId, resolvedById, etc.
+ */
+const resolveAlertSchema = z.object({
+  resolutionNote: z.string().max(2000).optional(),
+}).strict();
+
 module.exports = {
   verifyClusterSchema,
+  resolveAlertSchema,
   validateRequest,
   validateQuery,
   validateParams,

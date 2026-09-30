@@ -16,11 +16,13 @@ function calculateBaseline(observations, defaultBaseline = { activity: 80, feedi
   };
 }
 
-function calculateDeviation(current, baseline) {
-  const actDrop = baseline.activity > 0 ? Math.max(0, Math.round(((baseline.activity - (current.activity || 80)) / baseline.activity) * 100)) : 0;
-  const feedDrop = baseline.feeding > 0 ? Math.max(0, Math.round(((baseline.feeding - (current.feeding || 80)) / baseline.feeding) * 100)) : 0;
-  const moveDrop = baseline.movement > 0 ? Math.max(0, Math.round(((baseline.movement - (current.movement || 80)) / baseline.movement) * 100)) : 0;
-  const rumDrop = baseline.rumination > 0 ? Math.max(0, Math.round(((baseline.rumination - (current.rumination || 80)) / baseline.rumination) * 100)) : 0;
+function calculateDeviation(current = {}, baseline = { activity: 80, feeding: 80, movement: 80, rumination: 80 }) {
+  const cur = current || {};
+  const base = baseline || { activity: 80, feeding: 80, movement: 80, rumination: 80 };
+  const actDrop = (base.activity || 80) > 0 ? Math.max(0, Math.round((((base.activity || 80) - (cur.activity || 80)) / (base.activity || 80)) * 100)) : 0;
+  const feedDrop = (base.feeding || 80) > 0 ? Math.max(0, Math.round((((base.feeding || 80) - (cur.feeding || 80)) / (base.feeding || 80)) * 100)) : 0;
+  const moveDrop = (base.movement || 80) > 0 ? Math.max(0, Math.round((((base.movement || 80) - (cur.movement || 80)) / (base.movement || 80)) * 100)) : 0;
+  const rumDrop = (base.rumination || 80) > 0 ? Math.max(0, Math.round((((base.rumination || 80) - (cur.rumination || 80)) / (base.rumination || 80)) * 100)) : 0;
   return { actDrop, feedDrop, moveDrop, rumDrop };
 }
 

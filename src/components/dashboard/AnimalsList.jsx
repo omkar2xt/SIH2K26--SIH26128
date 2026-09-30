@@ -112,39 +112,41 @@ export default function AnimalsList({ setPage, role, actions }) {
       </SectionTitle>
 
       {/* Risk summary row */}
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
         {['CRITICAL','RED','ORANGE','YELLOW','GREEN'].map(l => {
           const labels = { CRITICAL:'Critical', RED:'Alert', ORANGE:'Field Check', YELLOW:'Monitor', GREEN:'Normal' };
           const colors = { CRITICAL:'bg-red-900 text-white', RED:'bg-red-600 text-white', ORANGE:'bg-orange-600 text-white', YELLOW:'bg-amber-500 text-white', GREEN:'bg-emerald-600 text-white' };
           return (
             <button key={l} onClick={() => setFilterRisk(filterRisk === l ? '' : l)}
-              className={`rounded-xl p-3 text-center transition-all ${filterRisk === l ? colors[l] + ' ring-2 ring-offset-1 ring-slate-400' : 'bg-white border border-slate-200 text-slate-700'}`}>
-              <div className="text-xl font-black">{riskCounts[l]}</div>
-              <div className="text-[10px] font-semibold">{labels[l]}</div>
+              className={`rounded-xl p-1.5 sm:p-3 text-center transition-all ${filterRisk === l ? colors[l] + ' ring-2 ring-offset-1 ring-slate-400' : 'bg-white border border-slate-200 text-slate-700'}`}>
+              <div className="text-base sm:text-xl font-black leading-tight">{riskCounts[l]}</div>
+              <div className="text-[9px] sm:text-[10px] font-semibold truncate mt-0.5">{labels[l]}</div>
             </button>
           );
         })}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className={`${inputCls} pl-9 w-full`} placeholder="Search by ID, name, species, farm…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className={`${inputCls} pl-9 w-full min-h-[38px]`} placeholder="Search by ID, name, species, farm…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className={inputCls} value={filterSpecies} onChange={e => setFilterSpecies(e.target.value)}>
-          <option value="">All Species</option>
-          {speciesOptions.map(s => <option key={s}>{s}</option>)}
-        </select>
-        <select className={inputCls} value={filterFarm} onChange={e => setFilterFarm(e.target.value)}>
-          <option value="">All Farms</option>
-          {farmOptions.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
-        {(filterRisk || filterSpecies || filterFarm || search) && (
-          <button onClick={() => { setFilterRisk(''); setFilterSpecies(''); setFilterFarm(''); setSearch(''); }} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 px-2 py-1 rounded border border-slate-200">
-            <X size={13} /> Clear
-          </button>
-        )}
+        <div className="flex gap-2 flex-wrap">
+          <select className={`${inputCls} min-h-[38px] flex-1 sm:flex-initial`} value={filterSpecies} onChange={e => setFilterSpecies(e.target.value)}>
+            <option value="">All Species</option>
+            {speciesOptions.map(s => <option key={s}>{s}</option>)}
+          </select>
+          <select className={`${inputCls} min-h-[38px] flex-1 sm:flex-initial`} value={filterFarm} onChange={e => setFilterFarm(e.target.value)}>
+            <option value="">All Farms</option>
+            {farmOptions.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+          {(filterRisk || filterSpecies || filterFarm || search) && (
+            <button onClick={() => { setFilterRisk(''); setFilterSpecies(''); setFilterFarm(''); setSearch(''); }} className="flex items-center gap-1 text-xs sm:text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg border border-slate-200 bg-white min-h-[38px]">
+              <X size={13} /> Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Add Animal Form */}

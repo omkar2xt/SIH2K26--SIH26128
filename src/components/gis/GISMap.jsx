@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polyline, CircleMarker } from 'react-leaflet';
+import React, { useEffect, useState, useRef } from 'react';
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -30,15 +30,42 @@ const highRiskIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
+const focusedIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-violet.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [30, 48],
+  iconAnchor: [15, 48],
+  popupAnchor: [1, -42],
+  shadowSize: [45, 45]
+});
+
+function MapFocusController({ focusTarget, markerRef }) {
+  const map = useMap();
+  useEffect(() => {
+    if (focusTarget && focusTarget.latitude != null && focusTarget.longitude != null) {
+      map.flyTo([focusTarget.latitude, focusTarget.longitude], 13, { duration: 1.2 });
+      const timer = setTimeout(() => {
+        if (markerRef.current) {
+          markerRef.current.openPopup();
+        }
+      }, 1300);
+      return () => clearTimeout(timer);
+    }
+  }, [map, focusTarget, markerRef]);
+  return null;
+}
+
 export default function GISMap({ 
   liveData, 
   geoData, 
   layers, 
   onDistrictSelect,
   onFarmSelect,
-  onAnimalSelect
+  onAnimalSelect,
+  focusTarget
 }) {
   const [map, setMap] = useState(null);
+  const focusedMarkerRef = useRef(null);
 
   const getDistrictRiskColor = (districtName) => {
     const farmsInDistrict = liveData.farms.filter(f => f.district && f.district.name.toLowerCase() === districtName.toLowerCase());
@@ -46,10 +73,16 @@ export default function GISMap({
     const critical = liveData.animals.some(a => animalIds.includes(a.id) && (a.riskLevel === "CRITICAL" || a.riskLevel === "RED"));
     const orange = liveData.animals.some(a => animalIds.includes(a.id) && a.riskLevel === "ORANGE");
     
-    const hasCluster = liveData.clusters?.some(c => c.district && c.district.name.toLowerCase() === districtName.toLowerCase());
+    const hasCluster = liveData.clusters?.some(c => {
+      const cDist = typeof c.district === 'string' ? c.district : (c.district?.name || '');
+      return cDist.toLowerCase() === districtName.toLowerCase();
+    });
     
     // Check containment via clusters
-    const hasContainment = liveData.clusters?.some(c => c.district && c.district.name.toLowerCase() === districtName.toLowerCase() && c.containment && c.containment.status === 'ACTIVE');
+    const hasContainment = liveData.clusters?.some(c => {
+      const cDist = typeof c.district === 'string' ? c.district : (c.district?.name || '');
+      return cDist.toLowerCase() === districtName.toLowerCase() && c.containment && c.containment.status === 'ACTIVE';
+    });
 
     if (hasContainment) return '#7f1d1d'; // DARK RED
     if (critical || hasCluster) return '#dc2626'; // RED
@@ -71,7 +104,11 @@ export default function GISMap({
     layer.bindTooltip(`<strong>${districtName}</strong><br/>Click to view details`, { sticky: true });
     layer.on({
       click: (e) => {
-        if (map) map.fitBounds(e.target.getBounds());
+        try {
+          if (map) map.fitBounds(e.target.getBounds());
+        } catch (err) {
+          console.warn('Failed to fit bounds:', err);
+        }
         onDistrictSelect(districtName);
       },
       mouseover: (e) => e.target.setStyle({ fillOpacity: 0.8, weight: 2 }),
@@ -130,8 +167,10 @@ export default function GISMap({
           })}
 
           {layers.exposure && liveData.exposureEvents?.map((event, i) => {
-            const sourceFarm = liveData.farms.find(f => f.id === event.source?.farmId);
-            const targetFarm = liveData.farms.find(f => f.id === event.target?.farmId);
+            const sourceAnimal = liveData.animals.find(a => a.id === event.sourceId || a.id === event.source?.id);
+            const targetAnimal = liveData.animals.find(a => a.id === event.targetId || a.id === event.target?.id);
+            const sourceFarm = liveData.farms.find(f => f.id === sourceAnimal?.farmId);
+            const targetFarm = liveData.farms.find(f => f.id === targetAnimal?.farmId);
             if (!sourceFarm || !targetFarm || !sourceFarm.latitude || !targetFarm.latitude) return null;
             const color = event.riskLevel === "HIGH" ? "red" : event.riskLevel === "MEDIUM" ? "orange" : "gray";
             return (
@@ -144,6 +183,8 @@ export default function GISMap({
             );
           })}
           
+          <MapFocusController focusTarget={focusTarget} markerRef={focusedMarkerRef} />
+          
           {layers.containment && liveData.containment?.map((c, i) => {
             if (!c.centerLat || !c.centerLng) return null;
             return (
@@ -155,6 +196,40 @@ export default function GISMap({
               </CircleMarker>
             );
           })}
+
+          {/* Highlighted Focused Animal/Farm Location */}
+          {focusTarget && focusTarget.latitude != null && focusTarget.longitude != null && (
+            <>
+              <CircleMarker
+                center={[focusTarget.latitude, focusTarget.longitude]}
+                radius={24}
+                pathOptions={{
+                  color: '#0d9488',
+                  fillColor: '#14b8a6',
+                  fillOpacity: 0.35,
+                  weight: 3,
+                  dashArray: '5, 5'
+                }}
+              />
+              <Marker
+                position={[focusTarget.latitude, focusTarget.longitude]}
+                icon={focusedIcon}
+                ref={focusedMarkerRef}
+              >
+                <Popup autoClose={false} closeOnClick={false}>
+                  <div className="text-sm p-1 min-w-[170px]">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-teal-700 mb-0.5">Selected Animal Location</div>
+                    <div className="font-extrabold text-teal-950 text-base">{focusTarget.animalTag || focusTarget.animalId}</div>
+                    <div className="font-bold text-slate-800 mt-1">{focusTarget.farmName}</div>
+                    <div className="text-xs text-slate-500">{focusTarget.district}</div>
+                    <div className="text-[11px] font-mono text-slate-500 mt-1">
+                      {Math.abs(focusTarget.latitude).toFixed(4)}° N, {Math.abs(focusTarget.longitude).toFixed(4)}° E
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            </>
+          )}
 
         </MapContainer>
       )}

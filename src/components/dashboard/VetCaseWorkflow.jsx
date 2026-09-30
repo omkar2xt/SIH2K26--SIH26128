@@ -19,7 +19,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   CheckCircle2, XCircle, ClipboardList, Info, AlertTriangle,
-  RefreshCw, Loader2, FlaskConical, Stethoscope, ChevronRight
+  RefreshCw, Loader2, FlaskConical, Stethoscope, ChevronRight,
+  Camera, ShieldAlert, Activity, FileText
 } from 'lucide-react';
 import { Card, SectionTitle, RiskBadge } from '../common/UIComponents';
 import { api } from '../../services/api/api.js';
@@ -229,16 +230,16 @@ export default function VetCaseWorkflow() {
 
   // ── Main UI ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-4 h-full min-h-[600px]">
+    <div className="flex flex-col md:flex-row gap-4 h-full min-h-0">
       {/* Case list panel */}
-      <div className="w-72 shrink-0 space-y-2">
+      <div className={`w-full md:w-72 shrink-0 space-y-2 ${selected ? 'hidden md:block' : 'block'}`}>
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-bold text-slate-800 text-sm">
             Cases ({filtered.length})
           </h2>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <select
-              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white min-h-[36px]"
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
             >
@@ -247,29 +248,40 @@ export default function VetCaseWorkflow() {
                 <option key={s} value={s}>{STATUS_LABELS[s]}</option>
               ))}
             </select>
-            <button onClick={fetchCases} title="Refresh" className="p-1 rounded hover:bg-slate-100">
+            <button onClick={fetchCases} title="Refresh" className="p-2 rounded-lg hover:bg-slate-100 min-h-[36px] min-w-[36px] flex items-center justify-center border border-slate-200">
               <RefreshCw size={13} className="text-slate-500" />
             </button>
           </div>
         </div>
 
-        {filtered.map(c => <CaseListItem key={c.id} c={c} />)}
+        <div className="space-y-2 max-h-[calc(100vh-220px)] md:max-h-none overflow-y-auto">
+          {filtered.map(c => <CaseListItem key={c.id} c={c} />)}
 
-        {filtered.length === 0 && (
-          <div className="py-8 text-center text-slate-400">
-            <ClipboardList size={28} className="mx-auto mb-2" />
-            <p className="text-sm">No cases found</p>
-            <p className="text-xs mt-1 text-slate-300">Cases are created by authorized veterinarians and officials</p>
-          </div>
-        )}
+          {filtered.length === 0 && (
+            <div className="py-8 text-center text-slate-400">
+              <ClipboardList size={28} className="mx-auto mb-2" />
+              <p className="text-sm">No cases found</p>
+              <p className="text-xs mt-1 text-slate-300">Cases are created by authorized veterinarians and officials</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Case detail panel */}
-      <div className="flex-1 min-w-0">
+      <div className={`flex-1 min-w-0 ${!selected ? 'hidden md:block' : 'block'}`}>
+        {selected && (
+          <button 
+            onClick={() => setSelected(null)}
+            className="md:hidden mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 bg-white border border-teal-200 px-3 py-2 rounded-lg shadow-xs min-h-[38px]"
+          >
+            ← Back to Cases List
+          </button>
+        )}
+
         {!selCase ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-400">
+          <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12">
             <ClipboardList size={48} className="mb-3 text-slate-300" />
-            <p className="font-semibold">Select a case to view details</p>
+            <p className="font-semibold text-sm">Select a case to view details</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -472,6 +484,89 @@ export default function VetCaseWorkflow() {
                       </span>
                     </div>
                   ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Immutable Event Snapshot (Point-in-Time Evidence) */}
+            {selCase.snapshots && selCase.snapshots.length > 0 && (
+              <Card className="p-4 border-teal-200 bg-teal-50/30">
+                <div className="flex items-center justify-between mb-3 border-b border-teal-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Camera size={16} className="text-teal-700" />
+                    <h4 className="font-bold text-sm text-teal-950">Event Snapshot (Immutable Evidence)</h4>
+                    <span className="text-[10px] font-semibold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">
+                      Point-in-Time
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    ID: {selCase.snapshots[0].id.slice(0, 8)}…
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {selCase.snapshots.map((snap, idx) => {
+                    const d = snap.data || {};
+                    const evalData = d.evaluation || d;
+                    const sev = d.severity || evalData.riskLevel || evalData.urgency;
+                    const summary = d.summary || evalData.explanation?.whyItMatters || evalData.explanation?.whatChanged || 'Clinical Event Captured';
+                    const reasons = evalData.reasons || [];
+                    const drops = evalData.telemetryDrops || {
+                      ...(evalData.actDrop ? { activityDrop: evalData.actDrop } : {}),
+                      ...(evalData.feedDrop ? { feedingDrop: evalData.feedDrop } : {}),
+                      ...(evalData.rumDrop ? { ruminationDrop: evalData.rumDrop } : {}),
+                      ...(evalData.moveDrop ? { movementDrop: evalData.moveDrop } : {}),
+                    };
+
+                    return (
+                      <div key={snap.id || idx} className="rounded-xl bg-white border border-teal-100 p-3 shadow-xs">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-800">{summary}</span>
+                            <div className="text-[11px] text-slate-500">
+                              Captured: {new Date(snap.createdAt).toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                          {sev && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              sev === 'CRITICAL' ? 'bg-red-100 text-red-800 border-red-200' :
+                              sev === 'HIGH' || sev === 'RED' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                              'bg-amber-100 text-amber-800 border-amber-200'
+                            }`}>
+                              {sev}
+                            </span>
+                          )}
+                        </div>
+
+                        {drops && Object.keys(drops).length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {Object.entries(drops).map(([k, v]) => (
+                              <div key={k} className="px-2 py-1 bg-red-50 border border-red-100 rounded text-[11px] font-medium text-red-700">
+                                {k.replace(/([A-Z])/g, ' $1').toLowerCase()}: <strong>-{v}%</strong>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {reasons.length > 0 && (
+                          <div className="text-xs text-slate-600 mb-2">
+                            <span className="font-semibold text-slate-700">Telemetry & Observation Triggers:</span>
+                            <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-slate-600">
+                              {reasons.map((r, ri) => (
+                                <li key={ri}>{typeof r === 'string' ? r : r.text}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {(evalData.recommendedAction || d.recommendedAction) && (
+                          <div className="rounded-lg bg-teal-50 border border-teal-100 p-2 text-xs text-teal-800">
+                            <strong>System Protocol:</strong> {evalData.recommendedAction || d.recommendedAction}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </Card>
             )}

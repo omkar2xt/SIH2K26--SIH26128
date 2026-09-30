@@ -14,6 +14,7 @@ async function main() {
     { name: 'DISTRICT_OFFICIAL' },
     { name: 'STATE_OFFICIAL' },
     { name: 'ADMIN' },
+    { name: 'DIAGNOSTIC_LABORATORY' },
   ];
 
   const roles = {};
@@ -62,25 +63,36 @@ async function main() {
   }
 
   // 4. Users
-  // DEVELOPMENT ONLY CREDENTIALS: Password is 'Dev@1234'
-  console.log('Generating development password hashes... (Dev@1234)');
-  const devPasswordHash = await bcrypt.hash('Dev@1234', 10);
+  // UNIQUE SECURE DEMO CREDENTIALS
+  console.log('Generating secure unique demo password hashes...');
+  
+  const adminPassHash = await bcrypt.hash('mX9$pQ2#rN7@vL4^', 10);
+  const vetPassHash = await bcrypt.hash('tF3%kY8*wV1!zC6&', 10);
+  const farmerPassHash = await bcrypt.hash('hB5^nJ2$mD9@fX3*', 10);
+  const labPassHash = await bcrypt.hash('qR8#vK4%pM7&gN2@', 10);
 
   await prisma.user.upsert({
     where: { username: 'admin' },
-    update: { passwordHash: devPasswordHash },
-    create: { username: 'admin', fullName: 'System Administrator', email: 'admin@pashuraksha.gov.in', roleId: roles['ADMIN'].id, passwordHash: devPasswordHash },
+    update: { passwordHash: adminPassHash },
+    create: { username: 'admin', fullName: 'System Administrator', email: 'admin@pashuraksha.gov.in', roleId: roles['ADMIN'].id, passwordHash: adminPassHash },
   });
+  
   await prisma.user.upsert({
     where: { username: 'dr_kulkarni' },
-    update: { passwordHash: devPasswordHash },
-    create: { username: 'dr_kulkarni', fullName: 'Dr. A. Kulkarni', email: 'vet.kulkarni@pashuraksha.gov.in', roleId: roles['VETERINARIAN'].id, passwordHash: devPasswordHash },
+    update: { passwordHash: vetPassHash },
+    create: { username: 'dr_kulkarni', fullName: 'Dr. A. Kulkarni', email: 'vet.kulkarni@pashuraksha.gov.in', roleId: roles['VETERINARIAN'].id, passwordHash: vetPassHash },
   });
 
   const farmerUser = await prisma.user.upsert({
     where: { username: 'test_farmer_a' },
-    update: { passwordHash: devPasswordHash },
-    create: { username: 'test_farmer_a', fullName: 'R. Deshmukh', email: 'farmer@pashuraksha.gov.in', roleId: roles['FARMER'].id, passwordHash: devPasswordHash },
+    update: { passwordHash: farmerPassHash },
+    create: { username: 'test_farmer_a', fullName: 'R. Deshmukh', email: 'farmer@pashuraksha.gov.in', roleId: roles['FARMER'].id, passwordHash: farmerPassHash },
+  });
+
+  await prisma.user.upsert({
+    where: { username: 'lab_tech_1' },
+    update: { passwordHash: labPassHash, roleId: roles['DIAGNOSTIC_LABORATORY'].id },
+    create: { username: 'lab_tech_1', fullName: 'Lab Technician 1', email: 'lab1@pashuraksha.gov.in', roleId: roles['DIAGNOSTIC_LABORATORY'].id, passwordHash: labPassHash },
   });
 
   // 5. Species (SP_01 to SP_16)

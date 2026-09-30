@@ -249,15 +249,15 @@ export default function LaboratoryModule() {
   return (
     <div className="space-y-4">
       <SectionTitle eyebrow="Diagnostics" title="Laboratory Workflow">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {flash    && <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">✓ {flash}</span>}
           {flashErr && <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-3 py-1 rounded-full">✗ {flashErr}</span>}
-          <button onClick={fetchAll} title="Refresh" className="p-1.5 rounded hover:bg-slate-100">
+          <button onClick={fetchAll} title="Refresh" className="p-2 rounded-lg hover:bg-slate-100 min-h-[38px] min-w-[38px] flex items-center justify-center border border-slate-200">
             <RefreshCw size={14} className="text-slate-500" />
           </button>
           <button
             onClick={() => setShowAdd(s => !s)}
-            className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-600"
+            className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-teal-600 min-h-[38px]"
           >
             <Plus size={14} /> Log Sample
           </button>
@@ -279,7 +279,7 @@ export default function LaboratoryModule() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         {[
           { label: 'Total Orders',  value: stats.total,        color: 'text-slate-800',   bg: 'bg-slate-50 border-slate-200' },
           { label: 'Tests Pending', value: stats.pending,      color: 'text-amber-800',   bg: 'bg-amber-50 border-amber-200' },
@@ -287,9 +287,9 @@ export default function LaboratoryModule() {
           { label: 'Negative',      value: stats.negative,     color: 'text-emerald-800', bg: 'bg-emerald-50 border-emerald-200' },
           { label: 'Inconclusive',  value: stats.inconclusive, color: 'text-orange-800',  bg: 'bg-orange-50 border-orange-200' },
         ].map(s => (
-          <div key={s.label} className={`rounded-xl border p-4 text-center ${s.bg}`}>
-            <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
-            <div className="text-xs font-semibold text-slate-500 mt-0.5">{s.label}</div>
+          <div key={s.label} className={`rounded-xl border p-2.5 sm:p-4 text-center ${s.bg}`}>
+            <div className={`text-xl sm:text-2xl font-black ${s.color}`}>{s.value}</div>
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-0.5">{s.label}</div>
           </div>
         ))}
       </div>

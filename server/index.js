@@ -17,8 +17,17 @@ const app = express();
 app.use(helmet());
 
 // Strict CORS Configuration
+const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+if (process.env.CORS_ORIGIN) allowedOrigins.push(process.env.CORS_ORIGIN);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -29,6 +38,7 @@ app.use(express.json({ limit: '100kb' }));
 const apiRoutes = require('./src/routes/api.routes');
 const gisRoutes = require('./src/routes/gis.routes');
 const epidemiologyRoutes = require('./src/routes/epidemiology.routes');
+const simulationRoutes = require('./src/routes/simulation.routes');
 
 // Health, Readiness & Liveness
 app.get('/health', (req, res) => {
@@ -47,6 +57,7 @@ app.get('/liveness', (req, res) => {
 app.use('/api', apiRoutes);
 app.use('/api/gis', gisRoutes);
 app.use('/api/epidemiology', epidemiologyRoutes);
+app.use('/api/simulation', simulationRoutes);
 
 // Global Error Handler (Hides Internal Details)
 app.use((err, req, res, next) => {

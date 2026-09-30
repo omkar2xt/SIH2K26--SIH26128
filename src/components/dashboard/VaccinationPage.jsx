@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Syringe, Plus, CheckCircle2, AlertTriangle, TrendingUp, RefreshCw } from 'lucide-react';
 import { Card, SectionTitle, StatCard } from '../common/UIComponents';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { api } from '../../services/api/api';
 
 const inputCls = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100";
 
-export default function VaccinationPage({ role }) {
+const COLORS = {
+  'Up to Date': '#10b981', // emerald-500
+  'Due Soon': '#f59e0b',   // amber-500
+  'Overdue': '#ef4444'     // red-500
+};
+
+export default function VaccinationPage({ role, setPage }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ animalId:'', vaccineId:'', vaccineName:'', date: new Date().toISOString().split('T')[0], nextDue:'', batchNo:'', administeredBy:'' });
   
@@ -18,20 +24,75 @@ export default function VaccinationPage({ role }) {
   const [stats, setStats] = useState({ totalRecords: 0, overdueAnimalsCount: 0, byDistrict: [], byDisease: [] });
   const [reference, setReference] = useState([]);
 
+  // New states for visualizations
+  const [animalCount, setAnimalCount] = useState(0);
+  const [donutData, setDonutData] = useState([]);
+  const [vaccineStats, setVaccineStats] = useState([]);
+
   const today = new Date().toISOString().split('T')[0];
 
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
-      const [refRes, statsRes, recordsRes] = await Promise.all([
+      const [refRes, statsRes, recordsRes, animalsRes] = await Promise.all([
         api.vaccination.getReference(),
         api.vaccination.getStats(),
-        api.vaccination.getRecords({ page: 1, pageSize: 100 }) // fetching first 100 for display
+        api.vaccination.getRecords({ page: 1, pageSize: 100 }), // fetching first 100 for display
+        api.animals.getAll()
       ]);
       setReference(refRes.data || []);
       setStats(statsRes.data || { totalRecords: 0, overdueAnimalsCount: 0, byDistrict: [], byDisease: [] });
-      setRecords(recordsRes.data || []);
+      
+      const recs = recordsRes.data || [];
+      setRecords(recs);
+
+      const anims = animalsRes.data || [];
+      const totalAnims = anims.length;
+      
+      let up = 0, due = 0, over = 0;
+      const todayDate = new Date();
+      const thirtyDays = new Date();
+      thirtyDays.setDate(todayDate.getDate() + 30);
+      
+      anims.forEach(a => {
+        const aRecs = recs.filter(r => r.animalId === a.id);
+        if (aRecs.length === 0) {
+          over++;
+        } else {
+          let isOver = false;
+          let isDue = false;
+          aRecs.forEach(r => {
+             if (r.nextDueDate) {
+               const nd = new Date(r.nextDueDate);
+               if (nd < todayDate) isOver = true;
+               else if (nd <= thirtyDays) isDue = true;
+             }
+          });
+          if (isOver) over++;
+          else if (isDue) due++;
+          else up++;
+        }
+      });
+      
+      setDonutData([
+        { name: 'Up to Date', value: up, color: COLORS['Up to Date'] },
+        { name: 'Due Soon', value: due, color: COLORS['Due Soon'] },
+        { name: 'Overdue', value: over, color: COLORS['Overdue'] }
+      ]);
+      setAnimalCount(totalAnims);
+
+      const vStats = [];
+      const uniqueVaccines = [...new Set(recs.map(r => r.vaccineName))];
+      uniqueVaccines.forEach(vName => {
+        const uAnims = new Set(recs.filter(r => r.vaccineName === vName).map(r => r.animalId));
+        const c = uAnims.size;
+        const pct = totalAnims > 0 ? Math.round((c / totalAnims) * 100) : 0;
+        vStats.push({ name: vName, count: c, total: totalAnims, pct });
+      });
+      vStats.sort((a,b) => b.pct - a.pct);
+      setVaccineStats(vStats);
+
     } catch (err) {
       console.error('Vaccination fetch failed', err);
       setError('Failed to load vaccination data. Backend may be offline.');
@@ -57,6 +118,17 @@ export default function VaccinationPage({ role }) {
       setError(err.message || 'Failed to record vaccination');
     }
   }
+
+  const getSummaryText = (data) => {
+    const over = data.find(d => d.name === 'Overdue')?.value || 0;
+    const due = data.find(d => d.name === 'Due Soon')?.value || 0;
+    const up = data.find(d => d.name === 'Up to Date')?.value || 0;
+    
+    if (over > 0) return `${over} animal${over > 1 ? 's' : ''} ${over > 1 ? 'are' : 'is'} overdue for vaccination.`;
+    if (due > 0) return `${due} animal${due > 1 ? 's' : ''} need${due > 1 ? '' : 's'} vaccination attention soon.`;
+    if (up > 0) return "Most of your animals are up to date.";
+    return "No animals to track.";
+  };
 
   if (loading && records.length === 0) {
     return <div className="p-8 text-center text-slate-500 animate-pulse">Loading Vaccination Records...</div>;
@@ -133,38 +205,93 @@ export default function VaccinationPage({ role }) {
         </Card>
       )}
 
+      {/* NEW GRAPHICS SECTION */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* District coverage chart */}
-        <Card className="p-4">
-          <h3 className="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">Coverage by District (%)</h3>
-          {stats.byDistrict?.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={stats.byDistrict} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                <XAxis type="number" domain={[0,100]} tick={{ fontSize:11 }} />
-                <YAxis dataKey="district" type="category" tick={{ fontSize:11 }} width={100} />
-                <Tooltip formatter={(v) => `${v}%`} />
-                <Bar dataKey="coverage" radius={[0,4,4,0]}>
-                  {stats.byDistrict.map((d,i) => <Cell key={i} fill={d.coverage >= 70 ? '#059669' : d.coverage >= 40 ? '#d97706' : '#dc2626'} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <p className="text-slate-400 text-sm py-8 text-center">No data.</p>}
+        {/* Left: Donut Chart */}
+        <Card className="p-5 flex flex-col min-h-[360px]">
+          <div className="mb-4">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">My Herd Vaccination Coverage</h3>
+            <p className="text-xs text-slate-500 mt-1">Vaccination status across your livestock.</p>
+          </div>
+          
+          <div className="flex-1 flex flex-col items-center justify-center relative min-h-[180px]">
+             <ResponsiveContainer width="100%" height="100%">
+               <PieChart>
+                 <Pie
+                   data={donutData}
+                   innerRadius={65}
+                   outerRadius={85}
+                   paddingAngle={2}
+                   dataKey="value"
+                   stroke="none"
+                   isAnimationActive={true}
+                 >
+                   {donutData.map((entry, index) => (
+                     <Cell key={`cell-${index}`} fill={entry.color} />
+                   ))}
+                 </Pie>
+                 <Tooltip 
+                   formatter={(value, name) => [`${value} animals`, name]}
+                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                 />
+               </PieChart>
+             </ResponsiveContainer>
+             
+             {/* Center Text */}
+             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total</span>
+               <span className="text-3xl font-black text-slate-800 leading-none">{animalCount}</span>
+             </div>
+          </div>
+          
+          {/* Legend */}
+          <div className="mt-4 space-y-2 px-2">
+            {donutData.map(d => {
+              // Ensure overdue stands out even in text
+              const isOverdue = d.name === 'Overdue';
+              return (
+                <div key={d.name} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className={`font-semibold ${isOverdue ? 'text-red-700' : 'text-slate-700'}`}>{d.name}</span>
+                  </div>
+                  <div className={`font-medium ${isOverdue ? 'text-red-700' : 'text-slate-600'}`}>
+                    {d.value} <span className={`text-xs ml-1 ${isOverdue ? 'text-red-400' : 'text-slate-400'}`}>({animalCount > 0 ? Math.round((d.value/animalCount)*100) : 0}%)</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Summary Text */}
+          <div className="mt-5 pt-4 border-t border-slate-100 text-center">
+            <p className="text-sm font-medium text-slate-600">{getSummaryText(donutData)}</p>
+          </div>
         </Card>
 
-        {/* Disease coverage */}
-        <Card className="p-4">
-          <h3 className="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">Coverage by Disease</h3>
-          <div className="space-y-3">
-            {stats.byDisease?.length === 0 && <p className="text-slate-400 text-sm py-8 text-center">No data.</p>}
-            {stats.byDisease?.map(r => (
-              <div key={r.disease}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="font-semibold text-slate-700">{r.disease}</span>
-                  <span className={`font-bold ${r.coverage >= 70 ? 'text-emerald-600' : r.coverage >= 40 ? 'text-amber-600' : 'text-red-600'}`}>{r.coverage}%</span>
+        {/* Right: Coverage Bars */}
+        <Card className="p-5 flex flex-col min-h-[360px]">
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Vaccination Coverage by Vaccine</h3>
+            <p className="text-xs text-slate-500 mt-1">Specific vaccine administration across herd.</p>
+          </div>
+          
+          <div className="space-y-6 flex-1">
+            {vaccineStats.length === 0 && <div className="h-full flex items-center justify-center"><p className="text-slate-400 text-sm">No vaccination data available.</p></div>}
+            {vaccineStats.map(v => (
+              <div key={v.name} className="animate-in fade-in duration-500">
+                <div className="flex justify-between items-end mb-2">
+                  <div>
+                    <div className="font-bold text-slate-800 text-[13px]">{v.name}</div>
+                    <div className="text-[11px] text-slate-500 font-semibold mt-0.5">{v.count} / {v.total}</div>
+                  </div>
+                  <div className="font-black text-teal-800 text-lg">{v.pct}%</div>
                 </div>
-                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div className={`h-full rounded-full ${r.coverage >= 70 ? 'bg-emerald-500' : r.coverage >= 40 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${r.coverage}%` }} />
+                <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden relative">
+                  <div 
+                    className="absolute top-0 left-0 h-full rounded-full bg-teal-600 transition-all duration-1000 ease-out"
+                    style={{ width: `${v.pct}%` }} 
+                  />
                 </div>
               </div>
             ))}

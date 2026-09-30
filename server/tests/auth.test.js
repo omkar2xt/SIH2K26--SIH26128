@@ -57,7 +57,7 @@ async function runTests() {
   }
 
   // A. Valid Credentials -> SUCCESS
-  let res = await request('POST', '/auth/login', {}, { username: 'admin', password: 'Dev@1234' });
+  let res = await request('POST', '/auth/login', {}, { username: 'admin', password: 'mX9$pQ2#rN7@vL4^' });
   if (assertStatus('A. Valid credentials -> SUCCESS', res, 200)) {
     token = res.data.token;
   }

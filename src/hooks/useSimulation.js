@@ -5,14 +5,31 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { store } from '../db/store.js';
-import { applySimulationStep, SIMULATION_STEPS } from '../engine/simulationEngine.js';
+import { applySimulationStep, SIMULATION_STEPS, executeBackendSimulationStep } from '../engine/simulationEngine.js';
+import { api } from '../services/api/api.js';
 import { runRuleEngine } from '../engine/ruleEngine.js';
 import { runExposureEngine } from '../engine/exposureEngine.js';
 import { runClusterEngine } from '../engine/clusterEngine.js';
 import { runAlertEngine, escalateStaleAlerts } from '../engine/alertEngine.js';
 
-function buildLiveData() {
+function buildLiveData(isDemoActive = true) {
   const db = store.snapshot();
+  
+  if (!isDemoActive) {
+    return {
+      ...db,
+      animals: [],
+      alerts: [],
+      cases: [],
+      observations: [],
+      labSamples: [],
+      vaccinations: [],
+      containmentZones: [],
+      exposureEvents: [],
+      clusters: []
+    };
+  }
+
   // Enrich animals with riskEval
   db.animals = db.animals.map(a => ({ ...a, riskEval: runRuleEngine(a, db) }));
   // Run exposure + cluster engines
@@ -22,24 +39,72 @@ function buildLiveData() {
 }
 
 export function useSimulation() {
-  const [isRunning, setIsRunning]   = useState(false);
-  const [demoStep,  setDemoStep]    = useState(0);
-  const [liveData,  setLiveData]    = useState(() => buildLiveData());
+  const [isRunning, setIsRunning]   = useState(() => localStorage.getItem('pashuraksha_sim_running') === 'true');
+  const [demoStep,  setDemoStep]    = useState(() => parseInt(localStorage.getItem('pashuraksha_sim_step') || '0', 10));
+  const [liveData,  setLiveData]    = useState(() => buildLiveData(demoStep > 0));
   const [offlineMode, setOfflineMode] = useState(false);
   const [pendingSync, setPendingSync] = useState(() => store.getAll('syncQueue').length);
 
-  // Refresh from store
-  const refresh = useCallback(() => { setLiveData(buildLiveData()); }, []);
+  // Refresh from store + sync backend
+  const refresh = useCallback(async () => {
+    // Determine if demo is active based on current state hook or local storage
+    const currentDemoStep = parseInt(localStorage.getItem('pashuraksha_sim_step') || '0', 10);
+    let db = buildLiveData(currentDemoStep > 0);
+    
+    if (currentDemoStep > 0) {
+      try {
+        const [an, al, ca] = await Promise.all([
+          api.animals.getAll(),
+          api.alerts.getAll(),
+          api.cases.getAll()
+        ]);
+        if (an.success && Array.isArray(an.data)) {
+          db.animals = db.animals.map(localAnim => {
+            const backendAnim = an.data.find(b => b.tagId === localAnim.tagId || b.id === localAnim.id);
+            return backendAnim ? { ...localAnim, ...backendAnim } : localAnim;
+          });
+        }
+        if (al.success && Array.isArray(al.data)) {
+          db.alerts = al.data;
+        }
+        if (ca.success && Array.isArray(ca.data)) {
+          db.cases = ca.data;
+        }
+      } catch (e) {
+        console.error("Simulation Backend sync failed:", e);
+      }
+    }
+    setLiveData(db);
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const lastExecutedStep = useRef(demoStep);
 
   // ── Simulation step effect ─────────────────────────────────────────────────
   useEffect(() => {
+    localStorage.setItem('pashuraksha_sim_step', demoStep.toString());
     if (demoStep === 0) {
       store.reset();
-      setLiveData(buildLiveData());
+      refresh();
+      lastExecutedStep.current = 0;
     } else {
-      setLiveData(prev => applySimulationStep(prev, demoStep));
+      if (lastExecutedStep.current !== demoStep) {
+        setLiveData(prev => applySimulationStep(prev, demoStep));
+        executeBackendSimulationStep(demoStep).then(() => {
+          refresh();
+        });
+        lastExecutedStep.current = demoStep;
+      }
     }
-  }, [demoStep]);
+  }, [demoStep, refresh]);
+
+  useEffect(() => {
+    localStorage.setItem('pashuraksha_sim_running', isRunning.toString());
+  }, [isRunning]);
 
   // ── Autoplay interval ──────────────────────────────────────────────────────
   useEffect(() => {

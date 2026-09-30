@@ -5,6 +5,7 @@
 import { runRuleEngine } from './ruleEngine.js';
 import { runExposureEngine } from './exposureEngine.js';
 import { runClusterEngine } from './clusterEngine.js';
+import { api } from '../services/api/api.js';
 
 export const SIMULATION_STEPS = 20;
 
@@ -172,4 +173,13 @@ export function applySimulationStep(db, step) {
   next.clusters = runClusterEngine(next);
 
   return next;
+}
+
+export async function executeBackendSimulationStep(step) {
+  try {
+    // Send step to backend simulation controller to process full workflow, bypassing frontend RBAC
+    await api.simulation.step(step);
+  } catch(e) {
+    console.error("Simulation Backend Error:", e);
+  }
 }

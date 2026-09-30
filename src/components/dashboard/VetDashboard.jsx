@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, AlertTriangle, Eye, FlaskConical, Network, ClipboardList, ChevronRight, Activity, Bell } from 'lucide-react';
 import { SectionTitle, StatCard, Card, RiskBadge } from '../common/UIComponents';
+import { api } from '../../services/api/api.js';
 
 export default function VetDashboard({ liveData, setPage, role, actions }) {
   // Backend cases — fetched independently of liveData simulation
@@ -11,7 +12,6 @@ export default function VetDashboard({ liveData, setPage, role, actions }) {
   useEffect(() => {
     (async () => {
       try {
-        const { api } = await import('../../services/api/api.js');
         const res = await api.cases.getAll();
         if (res.success) {
           setBackendCases(Array.isArray(res.data) ? res.data : []);
@@ -76,7 +76,7 @@ export default function VetDashboard({ liveData, setPage, role, actions }) {
                 const farm    = (liveData.farms||[]).find(f => f.id === a.farmId);
                 const species = (liveData.species||[]).find(s => s.id === a.speciesId);
                 return (
-                  <tr key={a.id} onClick={() => setPage('animal-profile', a.id)}
+                  <tr key={a.id} onClick={() => setPage('animal-profile', a.tagId || a.id)}
                     className="border-b border-slate-50 hover:bg-teal-50 cursor-pointer transition-colors">
                     <td className="px-4 py-3 font-bold text-teal-800">{a.name || a.id}</td>
                     <td className="px-4 py-3 text-slate-600">{farm?.name} · <span className="text-slate-400">{farm?.district}</span></td>

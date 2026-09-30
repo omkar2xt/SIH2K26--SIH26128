@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Database, Search, ChevronDown, ChevronUp, AlertTriangle, Shield, Stethoscope, Camera, Cpu } from 'lucide-react';
 import { Card, SectionTitle } from '../common/UIComponents';
+import { api } from '../../services/api/api.js';
 
 const EV_STYLE = {
   'Confirmed':                       'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -14,9 +15,9 @@ const EV_STYLE = {
 function FieldRow({ label, value }) {
   if (!value) return null;
   return (
-    <div className="grid grid-cols-3 gap-2 py-1.5 border-b border-slate-100 last:border-0">
-      <div className="text-xs font-semibold text-slate-500 col-span-1">{label}</div>
-      <div className="text-xs text-slate-800 col-span-2">{value}</div>
+    <div className="flex flex-col sm:grid sm:grid-cols-3 gap-1 sm:gap-2 py-1.5 border-b border-slate-100 last:border-0">
+      <div className="text-[11px] sm:text-xs font-semibold text-slate-500 sm:col-span-1">{label}</div>
+      <div className="text-xs text-slate-800 sm:col-span-2">{value}</div>
     </div>
   );
 }
@@ -30,8 +31,18 @@ export default function DiseaseKnowledgeBase({ liveData }) {
   const [search,   setSearch]   = useState('');
   const [expanded, setExpanded] = useState(null);
   const [filterSpec, setFilterSpec] = useState('');
+  const [backendDiseases, setBackendDiseases] = useState(null);
 
-  const diseases = liveData.diseases || [];
+  useEffect(() => {
+    api.diseases.getAll().then(res => {
+      const data = Array.isArray(res) ? res : (res?.data || []);
+      if (Array.isArray(data) && data.length > 0) {
+        setBackendDiseases(data);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const diseases = backendDiseases || liveData.diseases || [];
   const speciesList = liveData.species || [];
   const assocs = liveData.diseaseSpecies || [];
 
@@ -61,7 +72,7 @@ export default function DiseaseKnowledgeBase({ liveData }) {
   return (
     <div className="space-y-4">
       <SectionTitle eyebrow="Maharashtra Livestock Knowledge Base — FINAL v1.0" title="Disease Knowledge Base">
-        <div className="text-xs text-slate-500 text-right">
+        <div className="text-xs text-slate-500 text-left sm:text-right mt-1 sm:mt-0">
           <div>16 Diseases · 33 Associations · 16 Species</div>
           <div className="font-bold text-teal-700 mt-0.5">Source: MH_Livestock_Knowledge_Base_FINAL_v1.md</div>
         </div>
@@ -73,12 +84,12 @@ export default function DiseaseKnowledgeBase({ liveData }) {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="pl-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-600 focus:outline-none" placeholder="Search by disease name, pathogen, category…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="pl-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-600 focus:outline-none min-h-[38px]" placeholder="Search by disease name, pathogen, category…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={filterSpec} onChange={e => setFilterSpec(e.target.value)}>
+        <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm min-h-[38px] w-full sm:w-auto" value={filterSpec} onChange={e => setFilterSpec(e.target.value)}>
           <option value="">All Species</option>
           {speciesList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>

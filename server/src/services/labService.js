@@ -71,6 +71,7 @@ function getLabOrderScope(user) {
       return {};  // district-scoping requires district association on user; broad for now
     case 'STATE_OFFICIAL':
     case 'ADMIN':
+    case 'DIAGNOSTIC_LABORATORY':
       return {};  // Full access
     default:
       return { id: 'NEVER' };  // Deny unknown roles
@@ -137,6 +138,7 @@ async function getAuthorizedLabTest(testId, user) {
   // Check role-based access
   const isAuthorized =
     user.role === 'ADMIN' ||
+    user.role === 'DIAGNOSTIC_LABORATORY' ||
     user.role === 'STATE_OFFICIAL' ||
     user.role === 'DISTRICT_OFFICIAL' ||
     (user.role === 'VETERINARIAN' && (order.requestorId === user.userId || order.case?.assignedVetId === user.userId)) ||

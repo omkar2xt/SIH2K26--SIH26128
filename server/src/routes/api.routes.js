@@ -18,6 +18,7 @@ const {
   createAnimalSchema, 
   createObservationSchema, 
   createAlertSchema,
+  resolveAlertSchema,
   createCaseSchema,
   assignCaseSchema,
   updateCaseStatusSchema,
@@ -55,7 +56,7 @@ const { z } = require('zod');
 const { calculateBaseline } = require('../services/healthFingerprintService');
 const { evaluateRisk } = require('../services/intelligenceCoreService');
 // removed old engine imports
-const { processRiskEvaluation } = require('../services/alertService');
+const { processRiskEvaluation, resolveAlert } = require('../services/alertService');
 
 // ----------------------------------------------------
 // Health Check & Readiness
@@ -89,6 +90,7 @@ router.get('/users', authenticateRequest, requireRoles(['ADMIN']), validateQuery
 
 router.post('/auth/login', async (req, res) => {
   const { username, password } = req.body;
+  console.log(`[LOGIN ATTEMPT] username=${username} password=${password}`);
   
   if (!username || !password) {
     return res.status(401).json({ error: 'Username and password are required' });
@@ -125,6 +127,23 @@ router.use(authenticateRequest);
 // apply api limiter globally for all protected routes
 router.use(apiLimiter);
 
+// GET /auth/me — Return currently authenticated user profile
+router.get('/auth/me', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      include: { role: true },
+    });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const { passwordHash, ...safeUser } = user;
+    res.json({ success: true, data: { user: safeUser } });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch current user' });
+  }
+});
+
 // ----------------------------------------------------
 // Master Data: Species, Breeds, Diseases
 // ----------------------------------------------------
@@ -150,6 +169,124 @@ router.get('/diseases', validateQuery(paginationSchema), async (req, res) => {
     skip: (page - 1) * pageSize, take: pageSize
   });
   res.json(diseases);
+});
+
+router.get('/diseases/:id/associated-animals', validateQuery(paginationSchema), async (req, res) => {
+  const diseaseId = req.params.id;
+  const { page, pageSize } = req.validatedQuery;
+  
+  // Base animal where clause for authorization
+  let baseWhere = {};
+  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
+    baseWhere = { farm: { ownerId: req.user.userId } };
+  } else if (req.user.role === 'VETERINARIAN') {
+    baseWhere = { cases: { some: { assignedVetId: req.user.userId } } };
+  }
+
+  // Find all authorized animals
+  const allAnimals = await prisma.animal.findMany({
+    where: baseWhere,
+    include: {
+      species: true,
+      breed: true,
+      farm: { include: { district: true, village: true } },
+      cases: { include: { labOrders: true } },
+      observations: { orderBy: { timestamp: 'desc' }, take: 10 }, // fetch enough to evaluate
+      healthEvents: true,
+    }
+  });
+  
+  const { evaluateRisk } = require('../services/intelligenceCoreService');
+  const { calculateBaseline } = require('../services/healthFingerprintService');
+  const allDiseases = await prisma.disease.findMany();
+  const allDiseaseSpecies = await prisma.diseaseSpeciesAssociation.findMany();
+
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(diseaseId);
+  const disease = isUUID 
+    ? await prisma.disease.findUnique({ where: { id: diseaseId } })
+    : await prisma.disease.findFirst({ where: { OR: [{ code: diseaseId }, { shortName: diseaseId }] } });
+  
+  if (!disease) return res.status(404).json({ success: false, error: { message: "Disease not found" } });
+  const targetDiseaseId = disease.id;
+
+  const associatedAnimals = [];
+  
+  for (const animal of allAnimals) {
+    let isAssociated = false;
+    let status = 'Unknown';
+    let urgency = 'GREEN';
+    let labStatus = 'No Lab Result';
+    let vetCaseId = null;
+
+    // Check cases
+    const relatedCase = animal.cases.find(c => c.suspectedDiseaseId === targetDiseaseId);
+    if (relatedCase) {
+      isAssociated = true;
+      vetCaseId = relatedCase.id;
+      status = 'Veterinary Investigation';
+      
+      const labOrder = relatedCase.labOrders?.[0];
+      if (labOrder) {
+        if (labOrder.resultStatus === 'PENDING') {
+          labStatus = 'Lab Pending';
+          status = 'Laboratory Pending';
+        } else if (labOrder.resultStatus === 'POSITIVE') {
+          labStatus = 'Positive';
+          status = 'Laboratory Confirmed';
+        } else if (labOrder.resultStatus === 'NEGATIVE') {
+          labStatus = 'Negative';
+          status = 'Rejected';
+        }
+      }
+    }
+
+    // Check intelligence core
+    if (!isAssociated || status === 'Veterinary Investigation' || status === 'Laboratory Pending') {
+      const obs = animal.observations || [];
+      const baseline = calculateBaseline(obs);
+      let evaluationReadings = {};
+      if (obs.length > 0) {
+        const latest = obs[0];
+        evaluationReadings = {
+          activity: latest.activityLevel,
+          feeding: latest.feedingMinutes,
+          movement: latest.movementMeters,
+          rumination: latest.ruminationMinutes,
+          temperatureCelsius: latest.temperatureCelsius,
+          social: latest.notes?.toLowerCase().includes('lying down') ? 'recumbent' : undefined
+        };
+      }
+      const riskEval = evaluateRisk(animal, evaluationReadings, baseline, allDiseases, [], allDiseaseSpecies);
+      const matched = riskEval.diseaseRisks.find(d => d.diseaseId === targetDiseaseId);
+      
+      if (matched) {
+        isAssociated = true;
+        urgency = matched.risk; // HIGH, MEDIUM, LOW
+        if (status === 'Unknown') status = 'Potential Disease Risk';
+      }
+    }
+
+    if (isAssociated) {
+      associatedAnimals.push({
+        animalId: animal.id,
+        tagId: animal.tagId,
+        speciesName: animal.species?.name,
+        breedName: animal.breed?.name,
+        farmName: animal.farm?.name,
+        location: animal.farm?.district?.name || animal.farm?.village?.name || 'Unknown Location',
+        status,
+        urgency: urgency === 'HIGH' ? 'RED' : urgency === 'MEDIUM' ? 'ORANGE' : 'YELLOW',
+        lastObservation: animal.observations[0]?.timestamp ? new Date(animal.observations[0].timestamp).toISOString() : null,
+        vetCaseId,
+        labStatus,
+      });
+    }
+  }
+
+  // Manual pagination
+  const paginated = associatedAnimals.slice((page - 1) * pageSize, page * pageSize);
+
+  res.json({ success: true, data: paginated, total: associatedAnimals.length, diseaseName: disease.name, diseaseCode: disease.code, diseaseDescription: disease.shortName || disease.name });
 });
 
 // ----------------------------------------------------
@@ -186,11 +323,7 @@ router.post('/farms', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIA
 router.get('/animals', validateQuery(paginationSchema), async (req, res) => {
   const { page, pageSize } = req.validatedQuery;
   let whereClause = {};
-  if (req.user.role === 'FARMER') {
-    whereClause = { farm: { ownerId: req.user.userId } };
-  } else if (req.user.role === 'VETERINARIAN') {
-    whereClause = { cases: { some: { assignedVetId: req.user.userId } } };
-  } else if (req.user.role === 'FIELD_WORKER') {
+  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
     whereClause = { farm: { ownerId: req.user.userId } };
   }
 
@@ -198,37 +331,83 @@ router.get('/animals', validateQuery(paginationSchema), async (req, res) => {
     where: whereClause,
     skip: (page - 1) * pageSize,
     take: pageSize,
-    include: { species: true, breed: true, farm: true, observations: true },
+    include: { species: true, breed: true, farm: { include: { district: true, village: true } }, observations: true },
     orderBy: { createdAt: 'desc' }
   });
+  console.log(`[GET /animals] User ${req.user.username} requested animals. Page=${page}, pageSize=${pageSize}. Returning ${animals.length} animals.`);
   res.json(animals);
 });
 
-router.get('/animals/:id', validateParams(idParamSchema), async (req, res) => {
-  let whereClause = { id: req.params.id };
-  if (req.user.role === 'FARMER') {
+router.get('/animals/by-tag/:tag', async (req, res) => {
+  const { tag } = req.params;
+  let whereClause = { tagId: tag };
+  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
     whereClause.farm = { ownerId: req.user.userId };
-  } else if (req.user.role === 'VETERINARIAN') {
-    whereClause.cases = { some: { assignedVetId: req.user.userId } };
   }
 
   const animal = await prisma.animal.findFirst({
     where: whereClause,
-    include: { species: true, breed: true, farm: true, observations: true, healthEvents: true, riskAssessments: true },
+    include: { 
+      species: true, 
+      breed: true, 
+      farm: {
+        include: { district: true, village: true }
+      }, 
+      observations: { orderBy: { timestamp: 'desc' }, take: 20 }, 
+      healthEvents: {
+        include: { snapshots: true },
+        orderBy: { createdAt: 'desc' }
+      }, 
+      riskAssessments: true 
+    },
+  });
+  if (!animal) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Animal not found or unauthorized' }});
+  res.json(animal);
+});
+
+router.get('/animals/:id', validateParams(idParamSchema), async (req, res) => {
+  let whereClause = { id: req.params.id };
+  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
+    whereClause.farm = { ownerId: req.user.userId };
+  }
+
+  const animal = await prisma.animal.findFirst({
+    where: whereClause,
+    include: { 
+      species: true, 
+      breed: true, 
+      farm: {
+        include: { district: true, village: true }
+      }, 
+      observations: { orderBy: { timestamp: 'desc' }, take: 20 }, 
+      healthEvents: {
+        include: { snapshots: true },
+        orderBy: { createdAt: 'desc' }
+      }, 
+      riskAssessments: true 
+    },
   });
   if (!animal) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Animal not found or unauthorized' }});
   res.json(animal);
 });
 
 router.post('/animals', requireRoles(['FARMER', 'ADMIN', 'FIELD_WORKER']), validateRequest(createAnimalSchema), async (req, res) => {
-  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
-    const farm = await prisma.farm.findUnique({ where: { id: req.body.farmId } });
-    if (!farm || farm.ownerId !== req.user.userId) {
-      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Unauthorized: Farm does not belong to you.' }});
+  try {
+    if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
+      const farm = await prisma.farm.findUnique({ where: { id: req.body.farmId } });
+      if (!farm || farm.ownerId !== req.user.userId) {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Unauthorized: Farm does not belong to you.' }});
+      }
     }
+    const animal = await prisma.animal.create({ data: req.body });
+    res.json(animal);
+  } catch (err) {
+    if (err.code === 'P2002' && err.meta?.target?.includes('tagId')) {
+      return res.status(400).json({ success: false, error: { code: 'DUPLICATE_TAG', message: 'An animal with this Tag/ID already exists.' }});
+    }
+    console.error('[POST /animals error]:', err);
+    res.status(500).json({ success: false, error: { message: 'Internal server error' }});
   }
-  const animal = await prisma.animal.create({ data: req.body });
-  res.json(animal);
 });
 
 // ----------------------------------------------------
@@ -260,6 +439,48 @@ router.post('/observations', requireRoles(['FARMER', 'FIELD_WORKER', 'VETERINARI
 
   const data = { ...req.body, observerId: req.user.userId };
   const obs = await prisma.healthObservation.create({ data });
+
+  // Automatic trace: Health Observation -> Intelligence Core -> Health Event -> Event Snapshot -> Alert
+  try {
+    const animal = await prisma.animal.findUnique({
+      where: { id: obs.animalId },
+      include: { farm: { include: { district: true } } }
+    });
+    if (animal) {
+      const recentObs = await prisma.healthObservation.findMany({
+        where: { animalId: obs.animalId },
+        orderBy: { timestamp: 'desc' },
+        take: 7
+      });
+      const baseline = calculateBaseline(recentObs);
+      const evaluationReadings = {
+        activity: obs.activityLevel,
+        feeding: obs.feedingMinutes,
+        movement: obs.movementMeters,
+        rumination: obs.ruminationMinutes,
+        temperatureCelsius: obs.temperatureCelsius,
+        social: obs.notes?.toLowerCase().includes('lying down') ? 'recumbent' : undefined
+      };
+      const diseases = await prisma.disease.findMany();
+      const diseaseSpecies = await prisma.diseaseSpeciesAssociation.findMany();
+      const exposureEvents = await prisma.exposureEvent.findMany({
+        where: { OR: [{ sourceId: obs.animalId }, { targetId: obs.animalId }] },
+        take: 100
+      });
+
+      const evaluation = evaluateRisk(animal, evaluationReadings, baseline, diseases, exposureEvents, diseaseSpecies);
+      
+      await prisma.animal.update({
+        where: { id: obs.animalId },
+        data: { riskLevel: evaluation.riskLevel },
+      });
+
+      await processRiskEvaluation(animal, evaluation, req.app.get('io'));
+    }
+  } catch (err) {
+    console.error('[POST /observations evaluation error]:', err);
+  }
+
   res.json(obs);
 });
 
@@ -336,9 +557,149 @@ router.get('/alerts', validateQuery(paginationSchema), async (req, res) => {
     where: whereClause,
     skip: (page - 1) * pageSize,
     take: pageSize,
-    orderBy: { createdAt: 'desc' } 
+    orderBy: { createdAt: 'desc' },
+    include: {
+      healthEvent: {
+        include: {
+          snapshots: true
+        }
+      }
+    }
   });
   res.json(alerts);
+});
+
+// ----------------------------------------------------
+// Event Snapshot Endpoints (Authoritative Persistence & Traceability)
+// ----------------------------------------------------
+router.get('/snapshots/:id', validateParams(idParamSchema), async (req, res) => {
+  const snapshotId = req.params.id;
+  const snapshot = await prisma.eventSnapshot.findUnique({
+    where: { id: snapshotId },
+    include: {
+      event: {
+        include: {
+          animal: { include: { farm: true } }
+        }
+      }
+    }
+  });
+
+  if (!snapshot) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Event snapshot not found' } });
+  }
+
+  // Strict RBAC enforcement
+  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
+    if (snapshot.event?.animal?.farm?.ownerId !== req.user.userId) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Unauthorized: Snapshot belongs to another farm' } });
+    }
+  }
+
+  let parsed = null;
+  try {
+    parsed = typeof snapshot.snapshotJson === 'string' ? JSON.parse(snapshot.snapshotJson) : snapshot.snapshotJson;
+  } catch (e) {
+    parsed = snapshot.snapshotJson;
+  }
+
+  res.json({
+    id: snapshot.id,
+    eventId: snapshot.eventId,
+    createdAt: snapshot.createdAt,
+    data: parsed
+  });
+});
+
+router.get('/animals/:id/snapshots', validateParams(idParamSchema), async (req, res) => {
+  const animalId = req.params.id;
+  const animal = await prisma.animal.findUnique({
+    where: { id: animalId },
+    include: { farm: true }
+  });
+
+  if (!animal) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Animal not found' } });
+  }
+
+  // Strict RBAC enforcement
+  if (req.user.role === 'FARMER' || req.user.role === 'FIELD_WORKER') {
+    if (animal.farm?.ownerId !== req.user.userId) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Unauthorized' } });
+    }
+  }
+
+  const events = await prisma.healthEvent.findMany({
+    where: { animalId },
+    include: { snapshots: true },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  const snapshots = events.flatMap(e => e.snapshots).map(s => {
+    let parsed = null;
+    try {
+      parsed = typeof s.snapshotJson === 'string' ? JSON.parse(s.snapshotJson) : s.snapshotJson;
+    } catch (e) {
+      parsed = s.snapshotJson;
+    }
+    return {
+      id: s.id,
+      eventId: s.eventId,
+      createdAt: s.createdAt,
+      data: parsed
+    };
+  });
+
+  res.json(snapshots);
+});
+
+router.get('/alerts/:id/snapshot', validateParams(idParamSchema), async (req, res) => {
+  const alertId = req.params.id;
+  const alert = await prisma.alert.findUnique({
+    where: { id: alertId },
+    include: {
+      healthEvent: {
+        include: {
+          snapshots: true
+        }
+      }
+    }
+  });
+
+  if (!alert) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Alert not found' } });
+  }
+
+  // Strict RBAC enforcement
+  if (req.user.role === 'FARMER') {
+    const userAnimals = await prisma.animal.findMany({
+      where: { farm: { ownerId: req.user.userId } },
+      select: { tagId: true, id: true }
+    });
+    const tags = userAnimals.map(a => a.tagId || a.id);
+    if (!tags.includes(alert.animalTag)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Unauthorized' } });
+    }
+  }
+
+  const snapshot = alert.healthEvent?.snapshots?.[0];
+  if (!snapshot) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'No snapshot linked to this alert' } });
+  }
+
+  let parsed = null;
+  try {
+    parsed = typeof snapshot.snapshotJson === 'string' ? JSON.parse(snapshot.snapshotJson) : snapshot.snapshotJson;
+  } catch (e) {
+    parsed = snapshot.snapshotJson;
+  }
+
+  res.json({
+    id: snapshot.id,
+    eventId: snapshot.eventId,
+    createdAt: snapshot.createdAt,
+    data: parsed
+  });
 });
 
 router.put('/alerts/:id/acknowledge', validateParams(idParamSchema), async (req, res) => {
@@ -369,6 +730,30 @@ router.put('/alerts/:id/acknowledge', validateParams(idParamSchema), async (req,
 
   res.json(updatedAlert);
 });
+
+router.put('/alerts/:id/resolve',
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  validateParams(idParamSchema),
+  validateRequest(resolveAlertSchema),
+  async (req, res) => {
+    try {
+      const result = await resolveAlert(req.params.id, req.user, req.body?.resolutionNote);
+      if (result.status) {
+        return res.status(result.status).json({
+          success: false,
+          error: { code: result.code, message: result.message }
+        });
+      }
+      res.json(result);
+    } catch (err) {
+      console.error('[ALERT_RESOLVE_ERROR]', err);
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to resolve alert' }
+      });
+    }
+  }
+);
 
 router.post('/alerts', requireRoles(['ADMIN', 'STATE_OFFICIAL', 'DISTRICT_OFFICIAL', 'VETERINARIAN']), validateRequest(createAlertSchema), async (req, res) => {
   const alert = await prisma.alert.create({ data: req.body });
@@ -519,10 +904,11 @@ router.post(
     const newCase = await prisma.case.create({
       data: {
         caseNumber,
-        animalId:    animal.id,
-        farmId:      animal.farmId,
-        createdById: req.user.userId,
-        alertId:     alertId,
+        animalId:      animal.id,
+        farmId:        animal.farmId,
+        createdById:   req.user.userId,
+        assignedVetId: req.user.role === 'VETERINARIAN' ? req.user.userId : undefined,
+        alertId:       alertId,
         // diseaseName from alert stored as clinicalNotes context — NOT a confirmed diagnosis
         clinicalNotes: alert.diseaseName
           ? `Risk assessment indicated potential disease risk: ${alert.diseaseName}. Veterinary review required. This is a system-generated risk assessment, not a clinical or laboratory-confirmed diagnosis.`
@@ -723,7 +1109,7 @@ router.post(
 
 // GET /lab/reference — Reference data for dropdowns (SampleTypes, LabFacilities, DiagnosticMethods)
 router.get('/lab/reference',
-  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'DIAGNOSTIC_LABORATORY']),
   async (req, res) => {
     const [sampleTypes, labFacilities, diagnosticMethods] = await Promise.all([
       prisma.sampleType.findMany({ orderBy: { name: 'asc' } }),
@@ -777,7 +1163,7 @@ router.get('/lab/orders/:id', validateParams(idParamSchema), async (req, res) =>
 // POST /lab/orders — Create lab order atomically (Order + Sample + Test in one transaction)
 router.post(
   '/lab/orders',
-  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'DIAGNOSTIC_LABORATORY']),
   validateRequest(createLabOrderSchema),
   async (req, res) => {
     const { caseId, labFacilityId, sampleTypeId, diagnosticMethodId, testName, suspectedDiseaseId, priority, collectedBy, notes } = req.body;
@@ -865,7 +1251,7 @@ router.post(
 // PUT /lab/orders/:id/status — Advance order through status state machine
 router.put(
   '/lab/orders/:id/status',
-  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'DIAGNOSTIC_LABORATORY']),
   validateParams(idParamSchema),
   validateRequest(updateLabOrderStatusSchema),
   async (req, res) => {
@@ -932,7 +1318,7 @@ router.get('/lab/tests/:testId/result',
 // Recording an INCONCLUSIVE result → no automatic case transition (vet review required)
 router.post(
   '/lab/tests/:testId/result',
-  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'ADMIN']),
+  requireRoles(['VETERINARIAN', 'DISTRICT_OFFICIAL', 'STATE_OFFICIAL', 'DIAGNOSTIC_LABORATORY']),
   validateParams(z.object({ testId: z.string().uuid() })),
   validateRequest(recordLabResultSchema),
   async (req, res) => {
