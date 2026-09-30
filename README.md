@@ -9,11 +9,11 @@ SIH 2026 - Problem Statement ID: 26128
 PASHU-RAKSHA is an explainable, rule-based decision-support platform designed for the Government of Maharashtra. It helps farmers, veterinarians, and district officials spot abnormal animal behavior early, understand disease risks with clear reasoning, and trace potential exposure across nearby herds. The system supports veterinary judgment—it does not replace it.
 
 ## Features
-- **Role-Based Access Control (RBAC)**: Specialized, secure dashboards for Farmers, Veterinarians, Diagnostic Laboratories, Field Workers, Government Officials, and Administrators.
+- **Role-Based Access**: Specialized dashboards for Farmers, Veterinarians, Field Workers, Government Officials, and Administrators.
 - **Health Fingerprinting**: Compares each animal against its individual behavioral baseline to detect subtle anomalies (Activity, Feeding, Movement, Rumination).
-- **Intelligence Core & Alerting**: Surfaces clear, reasoned alerts based on the official Maharashtra Livestock Knowledge Base.
-- **GIS Surveillance**: A robust, interactive geographic information system (Leaflet + GeoJSON) to track disease spread, containment zones, and clusters at the district level.
-- **End-to-End Simulation**: A built-in, full-stack simulation engine that artificially accelerates time to demonstrate outbreak detection. The simulated workflow spans the entire backend pipeline, automatically creating Alerts, Veterinary Cases, Lab Orders, and Lab Results in real-time across role-specific dashboards.
+- **Explainable AI (Rule Engine)**: Surfaces clear, reasoned alerts based on the official Maharashtra Livestock Knowledge Base.
+- **GIS Surveillance**: A robust, interactive geographic information system (Leaflet + GeoJSON) to track disease spread and clusters at the district level.
+- **Live Simulation**: A built-in simulation engine that artificially accelerates time to demonstrate outbreak detection, alert escalation, and containment protocols in a presentation setting. The simulated workflow now spans the entire backend pipeline, automatically creating Alerts, Veterinary Cases, Lab Orders, and Lab Results in real-time across role-specific dashboards.
 
 ## System Architecture
 
