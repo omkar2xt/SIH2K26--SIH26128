@@ -9,11 +9,11 @@ SIH 2026 - Problem Statement ID: 26128
 PASHU-RAKSHA is an explainable, rule-based decision-support platform designed for the Government of Maharashtra. It helps farmers, veterinarians, and district officials spot abnormal animal behavior early, understand disease risks with clear reasoning, and trace potential exposure across nearby herds. The system supports veterinary judgment—it does not replace it.
 
 ## Features
-- **Role-Based Access**: Specialized dashboards for Farmers, Veterinarians, Field Workers, Government Officials, and Administrators.
+- **Role-Based Access Control (RBAC)**: Specialized, secure dashboards for Farmers, Veterinarians, Diagnostic Laboratories, Field Workers, Government Officials, and Administrators.
 - **Health Fingerprinting**: Compares each animal against its individual behavioral baseline to detect subtle anomalies (Activity, Feeding, Movement, Rumination).
-- **Explainable AI (Rule Engine)**: Surfaces clear, reasoned alerts based on the official Maharashtra Livestock Knowledge Base.
-- **GIS Surveillance**: A robust, interactive geographic information system (Leaflet + GeoJSON) to track disease spread and clusters at the district level.
-- **Live Simulation**: A built-in simulation engine that artificially accelerates time to demonstrate outbreak detection, alert escalation, and containment protocols in a presentation setting.
+- **Intelligence Core & Alerting**: Surfaces clear, reasoned alerts based on the official Maharashtra Livestock Knowledge Base.
+- **GIS Surveillance**: A robust, interactive geographic information system (Leaflet + GeoJSON) to track disease spread, containment zones, and clusters at the district level.
+- **End-to-End Simulation**: A built-in, full-stack simulation engine that artificially accelerates time to demonstrate outbreak detection. The simulated workflow spans the entire backend pipeline, automatically creating Alerts, Veterinary Cases, Lab Orders, and Lab Results in real-time across role-specific dashboards.
 
 ## System Architecture
 
@@ -23,27 +23,30 @@ PASHU-RAKSHA operates on a robust, scalable architecture tailored for high perfo
    - **Framework:** React.js powered by Vite for fast, modular rendering.
    - **Styling:** Tailwind CSS for a responsive, accessible, and dynamic UI.
    - **Data Visualization:** Recharts for analytical dashboards and React Leaflet for interactive GIS surveillance mapping.
-   - **User Portals:** Distinct, role-based dashboards for Farmers, Veterinarians, Field Workers, Government Officials, and Admins.
 
-2. **Application & Processing Layer**
-   - **State Management:** React state/context to maintain live simulated events and user sessions.
-   - **Rule Engine (Explainable AI):** Evaluates incoming behavioral data (Activity, Feeding, Movement) against the official Maharashtra Livestock Knowledge Base to generate reasoned alerts.
-   - **Simulation Engine:** Built-in module to artificially accelerate time and generate mock telemetry for outbreak detection demonstrations.
+2. **Application & Processing Layer (Backend Node.js)**
+   - **API:** Express.js REST API with strict Zod payload validation and JWT authentication.
+   - **Intelligence Core:** Evaluates incoming telemetry against baselines to generate reasoned alerts.
+   - **Simulation Controller:** A dedicated endpoint (`/api/simulation/step`) that safely executes cross-role demo workflows (Observation -> Alert -> Case -> Lab Order -> Lab Result) directly on the backend to maintain data integrity.
 
 3. **Data Layer**
-   - **Health Fingerprinting Data:** Manages individual animal baselines for anomaly detection.
-   - **Geospatial Data:** Integrates official Maharashtra GeoJSON formats with OpenStreetMap tiles for district-level tracking.
+   - **Database:** PostgreSQL managed via Prisma ORM for strong relational integrity and schema safety.
+   - **Offline-First Sync:** The frontend employs local queues for telemetry fallback, seamlessly syncing with PostgreSQL when connectivity is restored.
 
 ## Tech Stack
-- **Frontend**: React, Vite, Tailwind CSS
-- **Mapping**: React Leaflet, OpenStreetMap, official Maharashtra GeoJSON
-- **Charts/Analytics**: Recharts
-- **Icons**: Lucide React
+- **Frontend**: React, Vite, Tailwind CSS, Recharts, Leaflet
+- **Backend**: Node.js, Express.js, Prisma ORM, Socket.io
+- **Database**: PostgreSQL
+- **Security**: JWT, bcrypt, Helmet, Zod Validation
 
 ## Local Setup
 1. Clone the repository: `git clone https://github.com/omkar2xt/SIH2K26--SIH26128`
-2. Install dependencies: `npm install`
-3. Start the dev server: `npm run dev`
+2. Install frontend dependencies: `npm install`
+3. Install backend dependencies: `cd server && npm install`
+4. Configure `.env` in the `server` directory with your `DATABASE_URL` and `JWT_SECRET`.
+5. Run Prisma migrations and seed the database: `cd server && npx prisma db push && node prisma/seed.js && node prisma/labSeed.js`
+6. Start the backend server: `cd server && node index.js`
+7. In a new terminal, start the frontend dev server: `npm run dev`
 
 ## Deployment
 
