@@ -8,9 +8,7 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: pashu-raksha-db
-          property: connectionString
+        sync: false
       - key: NODE_ENV
         value: production
       - key: JWT_SECRET
@@ -19,8 +17,3 @@ services:
         value: "24h"
       - key: CORS_ORIGIN
         value: https://sih-2-k26-sih-26128.vercel.app
-
-databases:
-  - name: pashu-raksha-db
-    databaseName: pashuraksha
-    user: pashuraksha
