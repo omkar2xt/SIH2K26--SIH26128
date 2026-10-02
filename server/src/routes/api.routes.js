@@ -3,7 +3,13 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL
+    }
+  }
+});
 
 const { authenticateRequest } = require('../middleware/auth.middleware');
 const { requireRoles } = require('../middleware/rbac.middleware');
@@ -63,11 +69,22 @@ const { processRiskEvaluation, resolveAlert } = require('../services/alertServic
 // ----------------------------------------------------
 router.get('/health', async (req, res) => {
   try {
-    // Basic liveness - don't hit DB to avoid leaking connection strings/Prisma errors on failure
+    let sanitizedDbUrl = 'not_set';
+    if (process.env.DATABASE_URL) {
+      try {
+        const u = new URL(process.env.DATABASE_URL);
+        u.password = '***';
+        sanitizedDbUrl = u.toString();
+      } catch (e) {
+        sanitizedDbUrl = 'invalid_url';
+      }
+    }
     res.json({
       status: 'ok',
       service: 'PASHU-RAKSHA Production Backend',
       timestamp: new Date().toISOString(),
+      dbUrl: sanitizedDbUrl,
+      rawDbUrlLength: process.env.DATABASE_URL ? process.env.DATABASE_URL.length : 0
     });
   } catch (err) {
     res.status(503).json({ success: false, error: { code: 'HEALTH_CHECK_FAILED', message: 'Service unavailable' } });
