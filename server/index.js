@@ -3,13 +3,18 @@ dotenv.config();
 
 // Apply IPv4 pooler fix dynamically for Render
 if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('db.vkbygzcmvzlurrxsndch.supabase.co')) {
-  let url = process.env.DATABASE_URL;
-  url = url.replace('postgres:', 'postgres.vkbygzcmvzlurrxsndch:');
-  url = url.replace('db.vkbygzcmvzlurrxsndch.supabase.co:5432', 'aws-0-ap-south-1.pooler.supabase.com:6543');
-  if (!url.includes('pgbouncer=true')) {
-    url += (url.includes('?') ? '&' : '?') + 'pgbouncer=true';
+  try {
+    const parsedUrl = new URL(process.env.DATABASE_URL);
+    if (parsedUrl.username === 'postgres' || parsedUrl.username === '') {
+      parsedUrl.username = 'postgres.vkbygzcmvzlurrxsndch';
+    }
+    parsedUrl.hostname = 'aws-0-ap-south-1.pooler.supabase.com';
+    parsedUrl.port = '6543';
+    parsedUrl.searchParams.set('pgbouncer', 'true');
+    process.env.DATABASE_URL = parsedUrl.toString();
+  } catch (e) {
+    console.error('Failed to rewrite DATABASE_URL:', e);
   }
-  process.env.DATABASE_URL = url;
 }
 
 const express = require('express');
