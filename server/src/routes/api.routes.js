@@ -96,7 +96,7 @@ router.post('/auth/login', async (req, res) => {
     return res.status(401).json({ error: 'Username and password are required' });
   }
 
-  try { const user = await prisma.user.findUnique({ where: { username }, include: { role: true } }); if (!user) return res.status(401).json({ error: 'Invalid credentials' }); const isValid = await bcrypt.compare(password, user.passwordHash); if (!isValid) return res.status(401).json({ error: 'Invalid credentials' }); const token = jwt.sign({ userId: user.id, username: user.username, roleId: user.roleId, role: user.role.name }, process.env.JWT_SECRET, { expiresIn: '24h' }); const { passwordHash, ...safeUser } = user; res.json({ user: safeUser, token }); } catch (err) { res.status(500).json({ error: err.message, stack: err.stack }); return; } /*({
+  const user = await prisma.user.findUnique({
     where: { username },
     include: { role: true },
   });
@@ -130,7 +130,7 @@ router.use(apiLimiter);
 // GET /auth/me — Return currently authenticated user profile
 router.get('/auth/me', async (req, res) => {
   try {
-    try { const user = await prisma.user.findUnique({ where: { username }, include: { role: true } }); if (!user) return res.status(401).json({ error: 'Invalid credentials' }); const isValid = await bcrypt.compare(password, user.passwordHash); if (!isValid) return res.status(401).json({ error: 'Invalid credentials' }); const token = jwt.sign({ userId: user.id, username: user.username, roleId: user.roleId, role: user.role.name }, process.env.JWT_SECRET, { expiresIn: '24h' }); const { passwordHash, ...safeUser } = user; res.json({ user: safeUser, token }); } catch (err) { res.status(500).json({ error: err.message, stack: err.stack }); return; } /*({
+    const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       include: { role: true },
     });
