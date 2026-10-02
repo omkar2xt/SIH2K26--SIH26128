@@ -1,15 +1,26 @@
+const dotenv = require('dotenv');
+dotenv.config();
+
+// Apply IPv4 pooler fix dynamically for Render
+if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('db.vkbygzcmvzlurrxsndch.supabase.co')) {
+  let url = process.env.DATABASE_URL;
+  url = url.replace('postgres:', 'postgres.vkbygzcmvzlurrxsndch:');
+  url = url.replace('db.vkbygzcmvzlurrxsndch.supabase.co:5432', 'aws-0-ap-south-1.pooler.supabase.com:6543');
+  if (!url.includes('pgbouncer=true')) {
+    url += (url.includes('?') ? '&' : '?') + 'pgbouncer=true';
+  }
+  process.env.DATABASE_URL = url;
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const dotenv = require('dotenv');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { telemetrySchema } = require('./src/validators/api.validators');
-
-dotenv.config();
 
 const app = express();
 
