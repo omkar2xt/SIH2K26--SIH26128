@@ -99,7 +99,7 @@ app.use((err, req, res, next) => {
   // Generic unhandled exception shield
   res.status(500).json({
     success: false,
-    error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' }
+    error: { code: 'INTERNAL_SERVER_ERROR', message: err.message + ' | ' + err.stack }
   });
 });
 
