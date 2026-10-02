@@ -196,14 +196,14 @@ export default function Landing({ onSelectRole }) {
   };
 
   return (
-    <main className="min-h-screen w-full flex flex-col md:flex-row bg-slate-50 text-slate-800 font-sans overflow-x-hidden">
+    <main className="min-h-screen md:min-h-[100dvh] w-full flex flex-col md:flex-row bg-slate-50 text-slate-800 font-sans overflow-x-hidden">
       
       {/* LEFT PANEL: 45% on desktop, rich gradient & spacious layout */}
-      <section className="w-full md:w-[45%] lg:w-[44%] xl:w-[44%] bg-gradient-to-br from-[#072d21] via-[#0d4733] to-[#052218] text-white p-6 sm:p-10 lg:p-14 xl:p-16 border-b md:border-b-0 md:border-r border-[#126f4b]/50 md:h-screen md:overflow-y-auto shrink-0 flex flex-col relative shadow-xl">
+      <section className="w-full md:w-[45%] lg:w-[44%] xl:w-[44%] bg-gradient-to-br from-[#072d21] via-[#0d4733] to-[#052218] text-white p-6 sm:p-10 lg:p-10 xl:p-12 border-b md:border-b-0 md:border-r border-[#126f4b]/50 shrink-0 flex flex-col relative shadow-xl">
         <div className="max-w-[680px] mx-auto w-full flex flex-col h-full relative z-10">
           
           {/* Top Branding Block */}
-          <div className="mb-8 lg:mb-12">
+          <div className="mb-6 lg:mb-8">
             <div className="flex items-center gap-4 mb-2">
               <div className="w-12 h-12 rounded-xl bg-emerald-500/25 border border-emerald-400/50 flex items-center justify-center shadow-lg text-emerald-300 shrink-0 backdrop-blur-sm">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
@@ -218,7 +218,7 @@ export default function Landing({ onSelectRole }) {
           </div>
           
           {/* Main Statement & Description */}
-          <div className="mb-10 lg:mb-12">
+          <div className="mb-8 lg:mb-10">
             <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight text-white leading-[1.2] font-display max-w-xl drop-shadow-sm">
               {t.mainMessage}
             </h1>
@@ -228,25 +228,25 @@ export default function Landing({ onSelectRole }) {
           </div>
           
           {/* Health Response Cycle */}
-          <div className="mb-10 lg:mb-12">
+          <div className="mb-8 lg:mb-10">
             <p className="text-xs sm:text-sm font-bold tracking-widest uppercase text-emerald-300 mb-4 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               {t.healthResponseCycle}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-w-xl">
-              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[85px] backdrop-blur-md transition-all shadow-sm">
+              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[75px] backdrop-blur-md transition-all shadow-sm">
                 <span className="text-xs sm:text-sm font-black tracking-wide text-emerald-300">{t.observeTitle}</span>
                 <span className="text-sm sm:text-[15px] text-emerald-50 mt-1 leading-snug font-medium">{t.observeDesc}</span>
               </div>
-              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[85px] backdrop-blur-md transition-all shadow-sm">
+              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[75px] backdrop-blur-md transition-all shadow-sm">
                 <span className="text-xs sm:text-sm font-black tracking-wide text-emerald-300">{t.detectTitle}</span>
                 <span className="text-sm sm:text-[15px] text-emerald-50 mt-1 leading-snug font-medium">{t.detectDesc}</span>
               </div>
-              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[85px] backdrop-blur-md transition-all shadow-sm">
+              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[75px] backdrop-blur-md transition-all shadow-sm">
                 <span className="text-xs sm:text-sm font-black tracking-wide text-emerald-300">{t.assessTitle}</span>
                 <span className="text-sm sm:text-[15px] text-emerald-50 mt-1 leading-snug font-medium">{t.assessDesc}</span>
               </div>
-              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[85px] backdrop-blur-md transition-all shadow-sm">
+              <div className="bg-white/[0.08] hover:bg-white/[0.12] border border-emerald-400/25 rounded-xl p-4 flex flex-col justify-center min-h-[75px] backdrop-blur-md transition-all shadow-sm">
                 <span className="text-xs sm:text-sm font-black tracking-wide text-emerald-300">{t.actTitle}</span>
                 <span className="text-sm sm:text-[15px] text-emerald-50 mt-1 leading-snug font-medium">{t.actDesc}</span>
               </div>
@@ -254,7 +254,7 @@ export default function Landing({ onSelectRole }) {
           </div>
           
           {/* Key Capabilities */}
-          <div className="space-y-3.5 text-sm sm:text-base text-emerald-100 font-medium mb-12">
+          <div className="space-y-3.5 text-sm sm:text-base text-emerald-100 font-medium mb-8">
             <div className="flex items-center gap-3">
               <div className="w-6 h-6 rounded-full bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center shrink-0">
                 <Check size={16} className="text-emerald-300" strokeWidth={3} />
@@ -291,10 +291,10 @@ export default function Landing({ onSelectRole }) {
       </section>
       
       {/* RIGHT PANEL: 55-56% on desktop, clean, spacious & prominent */}
-      <section className="w-full md:w-[55%] lg:w-[56%] xl:w-[56%] bg-white flex flex-col md:h-screen md:overflow-y-auto">
+      <section className="w-full md:w-[55%] lg:w-[56%] xl:w-[56%] bg-white flex flex-col">
         
         {/* Language Selector Top Right */}
-        <div className="flex items-center justify-end p-5 md:p-8 shrink-0 bg-slate-50 md:bg-white border-b border-slate-200 md:border-transparent">
+        <div className="flex items-center justify-end p-4 md:p-6 shrink-0 bg-slate-50 md:bg-white border-b border-slate-200 md:border-transparent">
           <div className="inline-flex items-center text-sm font-semibold text-slate-600 bg-slate-100/80 rounded-xl p-1.5 border border-slate-200 shadow-sm">
             <button 
               onClick={() => setLang('en')}
@@ -321,10 +321,10 @@ export default function Landing({ onSelectRole }) {
         </div>
         
         {/* Center Login Container: comfortably widened from 450px to 560px */}
-        <div className="flex-1 flex flex-col justify-center px-6 sm:px-10 lg:px-12 py-8 md:py-10 w-full max-w-[560px] xl:max-w-[590px] mx-auto">
+        <div className="flex-1 flex flex-col justify-center px-6 sm:px-10 lg:px-12 py-6 md:py-8 w-full max-w-[560px] xl:max-w-[590px] mx-auto">
           
           {/* Form Header */}
-          <div className="mb-8">
+          <div className="mb-6">
             <h2 className="text-3xl sm:text-4xl lg:text-[40px] font-black tracking-tight text-slate-900 font-display">{t.signInTitle}</h2>
             <p className="text-base sm:text-lg text-slate-600 mt-2 font-normal">{t.signInDesc}</p>
           </div>
@@ -337,7 +337,7 @@ export default function Landing({ onSelectRole }) {
           )}
 
           {/* Sign-In Form */}
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
               <label className="block text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wider mb-2.5">
                 {t.usernameLabel}
@@ -349,7 +349,7 @@ export default function Landing({ onSelectRole }) {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={t.usernamePlaceholder}
                   required
-                  className="block w-full px-4.5 py-4 text-base sm:text-[17px] bg-slate-50/70 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0d4733] focus:border-transparent focus:bg-white transition" 
+                  className="block w-full px-4.5 py-3.5 text-base sm:text-[17px] bg-slate-50/70 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0d4733] focus:border-transparent focus:bg-white transition" 
                 />
               </div>
             </div>
@@ -370,7 +370,7 @@ export default function Landing({ onSelectRole }) {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t.passwordPlaceholder} 
                   required
-                  className="block w-full pl-4.5 pr-12 py-4 text-base sm:text-[17px] bg-slate-50/70 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0d4733] focus:border-transparent focus:bg-white transition" 
+                  className="block w-full pl-4.5 pr-12 py-3.5 text-base sm:text-[17px] bg-slate-50/70 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0d4733] focus:border-transparent focus:bg-white transition" 
                 />
                 <button 
                   type="button"
@@ -387,7 +387,7 @@ export default function Landing({ onSelectRole }) {
               id="login-submit-btn"
               type="submit" 
               disabled={loading}
-              className="w-full mt-3 bg-[#0d4733] hover:bg-[#093929] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-70 text-base sm:text-lg min-h-[56px]"
+              className="w-full mt-3 bg-[#0d4733] hover:bg-[#093929] text-white font-bold py-3.5 px-6 rounded-xl flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-70 text-base sm:text-lg min-h-[50px]"
             >
               {loading ? (
                 <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -404,7 +404,7 @@ export default function Landing({ onSelectRole }) {
             </div>
           </form>
           
-          <div className="my-8 md:my-10 border-t border-slate-200 w-full"></div>
+          <div className="my-6 md:my-8 border-t border-slate-200 w-full"></div>
           
           {/* DEMO ACCESS SECTION */}
           <div>
@@ -418,7 +418,7 @@ export default function Landing({ onSelectRole }) {
               <button 
                 type="button" 
                 onClick={() => handleDemoLogin('Farmer')} 
-                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[140px] shadow-sm hover:shadow-md"
+                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-4 sm:p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[120px] sm:min-h-[140px] shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-3 mb-2.5">
                   <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-105 transition-transform">
@@ -437,7 +437,7 @@ export default function Landing({ onSelectRole }) {
               <button 
                 type="button" 
                 onClick={() => handleDemoLogin('Vet')} 
-                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[140px] shadow-sm hover:shadow-md"
+                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-4 sm:p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[120px] sm:min-h-[140px] shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-3 mb-2.5">
                   <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-700 shrink-0 group-hover:scale-105 transition-transform">
@@ -456,7 +456,7 @@ export default function Landing({ onSelectRole }) {
               <button 
                 type="button" 
                 onClick={() => handleDemoLogin('Lab')} 
-                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[140px] shadow-sm hover:shadow-md"
+                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-4 sm:p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[120px] sm:min-h-[140px] shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-3 mb-2.5">
                   <div className="w-9 h-9 rounded-lg bg-teal-50 border border-teal-200/60 flex items-center justify-center text-teal-700 shrink-0 group-hover:scale-105 transition-transform">
@@ -475,7 +475,7 @@ export default function Landing({ onSelectRole }) {
               <button 
                 type="button" 
                 onClick={() => handleDemoLogin('Admin')} 
-                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[140px] shadow-sm hover:shadow-md"
+                className="text-left w-full border border-slate-200 hover:border-emerald-600 rounded-xl p-4 sm:p-5 transition-all bg-white hover:bg-emerald-50/30 group flex flex-col min-h-[120px] sm:min-h-[140px] shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-3 mb-2.5">
                   <div className="w-9 h-9 rounded-lg bg-purple-50 border border-purple-200/60 flex items-center justify-center text-purple-700 shrink-0 group-hover:scale-105 transition-transform">
@@ -494,7 +494,7 @@ export default function Landing({ onSelectRole }) {
         </div>
         
         {/* Right Bottom Footer */}
-        <div className="p-6 md:p-8 border-t border-slate-200 flex flex-col lg:flex-row items-center lg:justify-between gap-3.5 text-xs sm:text-sm text-slate-500 shrink-0 mx-0 lg:mx-8 mb-2 mt-auto text-center lg:text-left">
+        <div className="p-4 md:p-6 border-t border-slate-200 flex flex-col lg:flex-row items-center lg:justify-between gap-3.5 text-xs sm:text-sm text-slate-500 shrink-0 mx-0 lg:mx-8 mb-2 mt-auto text-center lg:text-left">
           <div className="order-2 lg:order-1">
             <span>{t.footerText}</span>
           </div>

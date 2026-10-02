@@ -1,7 +1,11 @@
 const configuredBase = import.meta.env.VITE_API_URL;
-const API_BASE_URL = configuredBase
+let API_BASE_URL = configuredBase
   ? configuredBase.replace(/\/$/, '')
-  : (typeof window !== 'undefined' && window.location.port === '5173' ? '/api' : 'http://localhost:3000/api');
+  : (import.meta.env.PROD ? '' : 'http://localhost:3000/api');
+
+if (API_BASE_URL && !API_BASE_URL.endsWith('/api')) {
+  API_BASE_URL += '/api';
+}
 
 /**
  * Standardized API client for PASHU-RAKSHA.
